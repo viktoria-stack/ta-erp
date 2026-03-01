@@ -308,7 +308,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
   const [tab, setTab] = useState(po.shipments?.length > 0 ? 'shipments' : 'lines')
   const lines = po.po_lines || []
   const shipments = (po.shipments || []).sort((a,b)=>a.dc.localeCompare(b.dc))
-  const isUnsplit = shipments.length === 0
+  const isUnsplit = shipments.length === 0 && !po.po_splits_confirmed
   const totalUK = lines.reduce((s,l)=>s+(l.qty_uk||0),0)
   const totalUSA = lines.reduce((s,l)=>s+(l.qty_usa||0),0)
   const grandTotal = lines.reduce((s,l)=>s+lineTotal(l),0)
@@ -718,7 +718,7 @@ export default function PurchaseOrdersPage() {
   useEffect(()=>{ load() },[])
 
   const allShipments = pos.flatMap(po=>(po.shipments||[]).map(sh=>({...sh,po})))
-  const unsplitPOs = pos.filter(po=>!(po.shipments?.length>0))
+  const unsplitPOs = pos.filter(po=>!(po.shipments?.length>0) && !po.po_splits_confirmed)
 
   const filteredShipments = allShipments.filter(sh=>{
     const matchDC = dcFilter==='All' || sh.dc===dcFilter
@@ -858,7 +858,7 @@ export default function PurchaseOrdersPage() {
               </thead>
               <tbody>
                 {filteredPOs.map(po=>{
-                  const isUnsplit = !(po.shipments?.length>0)
+                  const isUnsplit = !(po.shipments?.length>0) && !po.po_splits_confirmed
                   const ukSh = (po.shipments||[]).filter(s=>s.dc==='UK')
                   const usSh = (po.shipments||[]).filter(s=>s.dc==='US')
                   return (
