@@ -8,9 +8,23 @@ import { supabase } from '@/lib/supabase'
 const SIZES = ['XS','S','M','L','XL','XXL','ONE SIZE']
 
 async function getInventory() {
-  const { data, error } = await supabase.from('inventory').select('*').order('product_name').order('size')
-  if (error) throw error
-  return data || []
+  let all = []
+  let from = 0
+  const PAGE = 1000
+  while (true) {
+    const { data, error } = await supabase
+      .from('inventory')
+      .select('*')
+      .order('product_name')
+      .order('size')
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    all = [...all, ...data]
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return all
 }
 
 // ─── SHOPIFY CSV IMPORT MODAL ─────────────────────────────────
