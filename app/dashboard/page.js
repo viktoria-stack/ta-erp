@@ -326,7 +326,7 @@ export default function DashboardPage() {
           Set up Sales →
         </button>
       </div>
-    <style>{\`@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }\`}</style>
+    <style>{`@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }`}</style>
     </Shell>
   )
 }
