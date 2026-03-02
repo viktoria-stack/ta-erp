@@ -8,6 +8,8 @@ const NAV = [
   { href: '/purchase-orders',  label: 'Purchase Orders',  icon: '📋' },
   { href: '/inventory',        label: 'Inventory',        icon: '📦' },
   { href: '/suppliers',        label: 'Suppliers',        icon: '🏭' },
+  { href: '/invoices',         label: 'Invoices',         icon: '🧾' },
+  { href: '/sales',            label: 'Sales',            icon: '📈' },
 ]
 
 export default function Sidebar() {
