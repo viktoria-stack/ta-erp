@@ -162,6 +162,10 @@ export default function InventoryPage() {
                 <Th style={{ textAlign: 'right' }}>Total</Th>
                 <Th style={{ textAlign: 'right' }}>Cost</Th>
                 <Th style={{ textAlign: 'right' }}>Retail</Th>
+                <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 Incoming</Th>
+                <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 Restock</Th>
+                <Th style={{ textAlign: 'right', color: '#8b5cf6' }}>🇺🇸 Incoming</Th>
+                <Th style={{ textAlign: 'right', color: '#8b5cf6' }}>🇺🇸 Restock</Th>
               </tr>
             </thead>
             <tbody>
