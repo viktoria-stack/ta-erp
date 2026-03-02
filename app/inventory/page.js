@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 const PAGE_SIZE = 100
 
 async function fetchInventory({ search, store, page }) {
-  let query = supabase.from('inventory').select('*', { count: 'exact' })
+  let query = supabase.from('inventory_restock').select('*', { count: 'exact' })
 
   // Store filter
   if (store === 'UK') query = query.gt('qty_uk', 0)
@@ -166,11 +166,11 @@ export default function InventoryPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
+                <tr><td colSpan={13} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                   <div style={{ display: 'inline-block', width: 20, height: 20, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
                 </td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
+                <tr><td colSpan={13} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                   {search ? 'No results for your search' : 'No inventory data'}
                 </td></tr>
               ) : items.map((p, i) => {
@@ -192,6 +192,18 @@ export default function InventoryPage() {
                     </Td>
                     <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{p.cost_price ? fmt(p.cost_price, 'GBP') : '—'}</Td>
                     <Td style={{ textAlign: 'right', color: T.accent, fontSize: 12 }}>{p.retail_price ? fmt(p.retail_price, 'GBP') : '—'}</Td>
+                    <Td style={{ textAlign: 'right', color: '#3b82f6', fontWeight: p.incoming_uk > 0 ? 700 : 400 }}>{p.incoming_uk > 0 ? `+${p.incoming_uk}` : '—'}</Td>
+                    <Td style={{ textAlign: 'right', fontSize: 12 }}>
+                      {p.restock_date_uk
+                        ? <span style={{ color: new Date(p.restock_date_uk) < new Date(Date.now() + 30*864e5) ? T.green : T.muted, fontWeight: 600 }}>{new Date(p.restock_date_uk).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' })}</span>
+                        : <span style={{ color: p.qty_uk === 0 ? T.red : T.border }}>—</span>}
+                    </Td>
+                    <Td style={{ textAlign: 'right', color: '#8b5cf6', fontWeight: p.incoming_us > 0 ? 700 : 400 }}>{p.incoming_us > 0 ? `+${p.incoming_us}` : '—'}</Td>
+                    <Td style={{ textAlign: 'right', fontSize: 12 }}>
+                      {p.restock_date_us
+                        ? <span style={{ color: new Date(p.restock_date_us) < new Date(Date.now() + 30*864e5) ? T.green : T.muted, fontWeight: 600 }}>{new Date(p.restock_date_us).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' })}</span>
+                        : <span style={{ color: p.qty_us === 0 ? T.red : T.border }}>—</span>}
+                    </Td>
                   </tr>
                 )
               })}
