@@ -86,6 +86,7 @@ function SplitModal({ po, onClose, onSaved }) {
 
   const doSplit = async () => {
     setSaving(true)
+    const calcEta = (t) => { const d=new Date(); d.setDate(d.getDate()+(t==='AIR'?14:40)); return d.toISOString().slice(0,10) }
     const shipments = []
     if (includeUK) shipments.push({
       po_id: po.id, shipment_ref: `${po.id}UK${ukType}`,
@@ -98,6 +99,7 @@ function SplitModal({ po, onClose, onSaved }) {
       dc: 'US', shipment_type: usaType, units: +usaUnits, cartons: 0,
       status: 'In transit - awaiting freight info', added_to_warehouse:false, delivery_booked:false,
       quantities_verified:false, stock_on_shopify:false,
+      eta: calcEta(usaType),
     })
     for (const s of shipments) await addShipment(s)
     await updatePurchaseOrder(po.id, { po_splits_confirmed: true })
