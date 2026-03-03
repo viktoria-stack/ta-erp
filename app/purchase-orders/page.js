@@ -6,6 +6,10 @@ import { T, KPI, Card, Badge, Th, Td, Input, BtnPrimary, BtnGhost, Modal, CURREN
 import { getPurchaseOrders, getSuppliers, createPurchaseOrder, updatePurchaseOrder, updateShipment, addShipment, getPoLines } from '@/lib/supabase'
 import PackingListPanel from '@/components/PackingListPanel'
 
+// PO STATUS HELPERS
+const getPoStatus = (po) => { const s=po.shipments||[]; if(s.length===0) return 'In production'; if(s.every(x=>x.status&&(x.status.includes('Booked in')||x.status.includes('Delivered')))) return 'Completed'; if(s.some(x=>x.status&&x.status.includes('Receipt'))) return 'Receipt in progress'; return 'In transit' }
+const PO_STATUS_CFG = {'In production':{color:'#f59e0b',bg:'#f59e0b20'},'In transit':{color:'#3b82f6',bg:'#3b82f620'},'Receipt in progress':{color:'#f97316',bg:'#f9731620'},'Completed':{color:'#22c55e',bg:'#22c55e20'}}
+
 // ─── CONSTANTS ────────────────────────────────────────────────
 const SHIPMENT_STATUSES = [
   'In production',
@@ -742,14 +746,16 @@ export default function PurchaseOrdersPage() {
     return matchDC && matchStatus && matchSearch
   })
 
-  const filteredPOs = pos.filter(po=>{
+  const [poStatusFilter, setPoStatusFilter] = useState('All')
+  const filteredPOs = pos.filter(po => {
     const matchSearch = !search || po.id.toLowerCase().includes(search.toLowerCase()) || (po.supplier_name||'').toLowerCase().includes(search.toLowerCase())
-    return matchSearch
+    const matchStatus = poStatusFilter === 'All' || getPoStatus(po) === poStatusFilter
+    return matchSearch && matchStatus
   })
 
-  const inProduction = allShipments.filter(s=>s.status==='In production').length
+  const inProduction = pos.filter(po=>(po.shipments||[]).length===0).length
   const inTransit = allShipments.filter(s=>s.status?.includes('transit')).length
-  const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in')).length
+  const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in')||s.status?.includes('Delivered')).length
 
   return (
     <Shell title="Purchase Orders">
@@ -867,7 +873,7 @@ export default function PurchaseOrdersPage() {
                 <tr style={{ background:T.surface }}>
                   <Th>PO Reference</Th><Th>Supplier</Th><Th>Season</Th>
                   <Th>Ex-Factory</Th><Th>Total Cost</Th><Th>Deposit</Th>
-                  <Th>Shipments</Th><Th>Split Status</Th>
+                  <Th>Status</Th><Th>Shipments</Th><Th>Split Status</Th>
                   <Th>PO Checklist</Th><Th></Th>
                 </tr>
               </thead>
@@ -884,6 +890,7 @@ export default function PurchaseOrdersPage() {
                       <Td style={{ color:T.muted, fontSize:12 }}>{po.ex_factory_date||'—'}</Td>
                       <Td style={{ fontFamily:'monospace', fontWeight:700, color:T.accent }}>{fmt(po.total_cost_value, po.currency||'USD')}</Td>
                       <Td style={{ color:T.muted, fontSize:12 }}>{fmt(po.deposit_cost_value, po.currency||'USD')}</Td>
+                      <Td>{(() => { const s=getPoStatus(po); const cfg=PO_STATUS_CFG[s]||{color:'#888',bg:'#88888820'}; return <span style={{background:cfg.bg,color:cfg.color,border:`1px solid ${cfg.color}40`,borderRadius:4,padding:'2px 8px',fontSize:11,fontWeight:700}}>{s}</span> })()}</Td>
                       <Td>
                         <div style={{ display:'flex', gap:4 }}>
                           {ukSh.length>0 && <DCBadge dc="UK" />}
