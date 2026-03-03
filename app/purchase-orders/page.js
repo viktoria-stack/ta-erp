@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import Shell from '@/components/Shell'
 import { T, KPI, Card, Badge, Th, Td, Input, BtnPrimary, BtnGhost, Modal, CURRENCIES, fmt, Loading, ErrorMsg } from '@/components/ui'
 import { getPurchaseOrders, getSuppliers, createPurchaseOrder, updatePurchaseOrder, updateShipment, addShipment } from '@/lib/supabase'
+import PackingListPanel from '@/components/PackingListPanel'
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 const SHIPMENT_STATUSES = [
@@ -193,7 +194,7 @@ function SplitModal({ po, onClose, onSaved }) {
 }
 
 // ─── SHIPMENT PANEL (inside PO detail) ───────────────────────
-function ShipmentPanel({ shipment, currency, onSave }) {
+function ShipmentPanel({ shipment, currency, onSave, poLines = [], onSaved }) {
   const [s, setS] = useState({ ...shipment })
   const [saving, setSaving] = useState(false)
   const upd = (f,v) => setS(p=>({...p,[f]:v}))
@@ -211,6 +212,7 @@ function ShipmentPanel({ shipment, currency, onSave }) {
           {saving?'Saving…':'Save'}
         </BtnPrimary>
       </div>
+      <PackingListPanel shipment={shipment} poLines={poLines} onSaved={onSaved} />
 
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:10 }}>
         <div>
@@ -306,8 +308,19 @@ function ShipmentPanel({ shipment, currency, onSave }) {
 // ─── PO DETAIL MODAL ──────────────────────────────────────────
 function PODetail({ po, onClose, onSaved, onSplit }) {
   const [tab, setTab] = useState(po.shipments?.length > 0 ? 'shipments' : 'lines')
-  const lines = po.po_lines || []
+  const [lines, setLines] = useState(po.po_lines || [])
+  const [linesLoading, setLinesLoading] = useState(false)
   const shipments = (po.shipments || []).sort((a,b)=>a.dc.localeCompare(b.dc))
+
+  // Load line items on demand when tab is opened
+  useEffect(() => {
+    if (tab === 'lines' && lines.length === 0) {
+      setLinesLoading(true)
+      import('@/lib/supabase').then(({ getPoLines }) =>
+        getPoLines(po.id).then(data => { setLines(data); setLinesLoading(false) })
+      )
+    }
+  }, [tab])
   const isUnsplit = shipments.length === 0 && !po.po_splits_confirmed
   const totalUK = lines.reduce((s,l)=>s+(l.qty_uk||0),0)
   const totalUSA = lines.reduce((s,l)=>s+(l.qty_usa||0),0)
@@ -380,7 +393,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
             <div style={{ padding:32, textAlign:'center', color:T.muted, fontSize:13 }}>No shipments yet — use "Split into Shipments" above</div>
           ) : (
             shipments.map(sh=>(
-              <ShipmentPanel key={sh.id} shipment={sh} currency={po.currency} onSave={async(id,updates)=>{ await updateShipment(id,updates); onSaved() }} />
+              <ShipmentPanel key={sh.id} shipment={sh} currency={po.currency} onSave={async(id,updates)=>{ await updateShipment(id,updates); onSaved() }} poLines={lines} onSaved={onSaved} />
             ))
           )}
         </div>
@@ -388,7 +401,9 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
 
       {tab === 'lines' && (
         <div style={{ overflowX:'auto' }}>
-          {lines.length === 0 ? (
+          {linesLoading ? (
+            <div style={{ padding:32, textAlign:'center', color:T.muted, fontSize:13 }}>Loading line items…</div>
+          ) : lines.length === 0 ? (
             <div style={{ padding:32, textAlign:'center', color:T.muted, fontSize:13 }}>No line items recorded for this PO</div>
           ) : (
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:900 }}>
@@ -412,7 +427,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
                     <Td style={{ color:T.muted, fontFamily:'monospace', fontSize:11 }}>{l.sku||'—'}</Td>
                     <Td style={{ textAlign:'right', color:T.muted }}>{fmt(l.cost_price, po.currency||'USD')}</Td>
                     <Td style={{ textAlign:'right', fontWeight:600 }}>{(l.qty_uk||0).toLocaleString()}</Td>
-                    <Td style={{ textAlign:'right', fontWeight:600 }}>{(l.qty_usa||0).toLocaleString()}</Td>
+                    <Td style={{ textAlign:'right', fontWeight:600 }}>{(l.qty_us||l.qty_usa||0).toLocaleString()}</Td>
                     <Td style={{ textAlign:'right', color:T.green, fontWeight:700 }}>{(l.confirmed_xf||0).toLocaleString()}</Td>
                     <Td style={{ textAlign:'right', color:T.accent, fontWeight:700 }}>{fmt(lineTotal(l), po.currency||'USD')}</Td>
                   </tr>
