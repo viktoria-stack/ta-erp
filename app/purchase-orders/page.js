@@ -86,13 +86,13 @@ function SplitModal({ po, onClose, onSaved }) {
     if (includeUK) shipments.push({
       po_id: po.id, shipment_ref: `${po.id}UK${ukType}`,
       dc: 'UK', shipment_type: ukType, units: +ukUnits, cartons: 0,
-      status: 'In production', added_to_warehouse:false, delivery_booked:false,
+      status: 'In transit - awaiting freight info', added_to_warehouse:false, delivery_booked:false,
       quantities_verified:false, stock_on_shopify:false,
     })
     if (includeUSA) shipments.push({
       po_id: po.id, shipment_ref: `${po.id}USA${usaType}`,
       dc: 'US', shipment_type: usaType, units: +usaUnits, cartons: 0,
-      status: 'In production', added_to_warehouse:false, delivery_booked:false,
+      status: 'In transit - awaiting freight info', added_to_warehouse:false, delivery_booked:false,
       quantities_verified:false, stock_on_shopify:false,
     })
     for (const s of shipments) await addShipment(s)
@@ -321,7 +321,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
       )
     }
   }, [tab])
-  const isUnsplit = shipments.length === 0 && !po.po_splits_confirmed
+  const isUnsplit = shipments.length === 0
   const totalUK = lines.reduce((s,l)=>s+(l.qty_uk||0),0)
   const totalUSA = lines.reduce((s,l)=>s+(l.qty_usa||0),0)
   const grandTotal = lines.reduce((s,l)=>s+lineTotal(l),0)
@@ -733,7 +733,16 @@ export default function PurchaseOrdersPage() {
   useEffect(()=>{ load() },[])
 
   const allShipments = pos.flatMap(po=>(po.shipments||[]).map(sh=>({...sh,po})))
-  const unsplitPOs = pos.filter(po=>!(po.shipments?.length>0) && !po.po_splits_confirmed)
+  const unsplitPOs = pos.filter(po => !po.po_splits_confirmed && !(po.shipments?.length > 0))
+  // PO status derived from shipments
+  const getPoStatus = (po) => {
+    const ships = po.shipments || []
+    if (ships.length === 0) return 'In production'
+    if (ships.every(s => s.status?.includes('Booked in') || s.status?.includes('Delivered'))) return 'Completed'
+    if (ships.some(s => s.status?.includes('transit'))) return 'In transit'
+    if (ships.some(s => s.status?.includes('Receipt'))) return 'Receipt in progress'
+    return 'In transit'
+  }
 
   const filteredShipments = allShipments.filter(sh=>{
     const matchDC = dcFilter==='All' || sh.dc===dcFilter
@@ -747,9 +756,9 @@ export default function PurchaseOrdersPage() {
     return matchSearch
   })
 
-  const inProduction = allShipments.filter(s=>s.status==='In production').length
+  const inProduction = pos.filter(po => (po.shipments||[]).length === 0 && !po.po_splits_confirmed).length
   const inTransit = allShipments.filter(s=>s.status?.includes('transit')).length
-  const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in')).length
+  const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in') || s.status?.includes('Delivered')).length
 
   return (
     <Shell title="Purchase Orders">
