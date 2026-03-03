@@ -6,6 +6,21 @@ import { T, KPI, Card, Badge, Th, Td, Input, BtnPrimary, BtnGhost, Modal, CURREN
 import { getPurchaseOrders, getSuppliers, createPurchaseOrder, updatePurchaseOrder, updateShipment, addShipment } from '@/lib/supabase'
 import PackingListPanel from '@/components/PackingListPanel'
 
+// --- PO STATUS HELPER ---
+const getPoStatus = (po) => {
+  const ships = po.shipments || []
+  if (ships.length === 0) return 'In production'
+  if (ships.every(s => s.status && (s.status.includes('Booked in') || s.status.includes('Delivered')))) return 'Completed'
+  if (ships.some(s => s.status && s.status.includes('Receipt'))) return 'Receipt in progress'
+  return 'In transit'
+}
+const PO_STATUS_CFG = {
+  'In production':       { color: '#f59e0b', bg: '#f59e0b20' },
+  'In transit':          { color: '#3b82f6', bg: '#3b82f620' },
+  'Receipt in progress': { color: '#f97316', bg: '#f9731620' },
+  'Completed':           { color: '#22c55e', bg: '#22c55e20' },
+}
+
 // ─── CONSTANTS ────────────────────────────────────────────────
 const SHIPMENT_STATUSES = [
   'In production',
@@ -86,13 +101,13 @@ function SplitModal({ po, onClose, onSaved }) {
     if (includeUK) shipments.push({
       po_id: po.id, shipment_ref: `${po.id}UK${ukType}`,
       dc: 'UK', shipment_type: ukType, units: +ukUnits, cartons: 0,
-      status: 'In transit - awaiting freight info', added_to_warehouse:false, delivery_booked:false,
+      status: 'In production', added_to_warehouse:false, delivery_booked:false,
       quantities_verified:false, stock_on_shopify:false,
     })
     if (includeUSA) shipments.push({
       po_id: po.id, shipment_ref: `${po.id}USA${usaType}`,
       dc: 'US', shipment_type: usaType, units: +usaUnits, cartons: 0,
-      status: 'In transit - awaiting freight info', added_to_warehouse:false, delivery_booked:false,
+      status: 'In production', added_to_warehouse:false, delivery_booked:false,
       quantities_verified:false, stock_on_shopify:false,
     })
     for (const s of shipments) await addShipment(s)
@@ -321,7 +336,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
       )
     }
   }, [tab])
-  const isUnsplit = shipments.length === 0
+  const isUnsplit = shipments.length === 0 && !po.po_splits_confirmed
   const totalUK = lines.reduce((s,l)=>s+(l.qty_uk||0),0)
   const totalUSA = lines.reduce((s,l)=>s+(l.qty_usa||0),0)
   const grandTotal = lines.reduce((s,l)=>s+lineTotal(l),0)
@@ -733,16 +748,7 @@ export default function PurchaseOrdersPage() {
   useEffect(()=>{ load() },[])
 
   const allShipments = pos.flatMap(po=>(po.shipments||[]).map(sh=>({...sh,po})))
-  const unsplitPOs = pos.filter(po => !po.po_splits_confirmed && !(po.shipments?.length > 0))
-  // PO status derived from shipments
-  const getPoStatus = (po) => {
-    const ships = po.shipments || []
-    if (ships.length === 0) return 'In production'
-    if (ships.every(s => s.status?.includes('Booked in') || s.status?.includes('Delivered'))) return 'Completed'
-    if (ships.some(s => s.status?.includes('transit'))) return 'In transit'
-    if (ships.some(s => s.status?.includes('Receipt'))) return 'Receipt in progress'
-    return 'In transit'
-  }
+  const unsplitPOs = pos.filter(po=>!(po.shipments?.length>0) && !po.po_splits_confirmed)
 
   const filteredShipments = allShipments.filter(sh=>{
     const matchDC = dcFilter==='All' || sh.dc===dcFilter
@@ -751,14 +757,16 @@ export default function PurchaseOrdersPage() {
     return matchDC && matchStatus && matchSearch
   })
 
-  const filteredPOs = pos.filter(po=>{
+  const [poStatusFilter, setPoStatusFilter] = useState('All')
+  const filteredPOs = pos.filter(po => {
     const matchSearch = !search || po.id.toLowerCase().includes(search.toLowerCase()) || (po.supplier_name||'').toLowerCase().includes(search.toLowerCase())
-    return matchSearch
+    const matchStatus = poStatusFilter === 'All' || getPoStatus(po) === poStatusFilter
+    return matchSearch && matchStatus
   })
 
-  const inProduction = pos.filter(po => (po.shipments||[]).length === 0 && !po.po_splits_confirmed).length
+  const inProduction = pos.filter(po=>(po.shipments||[]).length===0).length
   const inTransit = allShipments.filter(s=>s.status?.includes('transit')).length
-  const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in') || s.status?.includes('Delivered')).length
+  const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in')||s.status?.includes('Delivered')).length
 
   return (
     <Shell title="Purchase Orders">
@@ -876,7 +884,7 @@ export default function PurchaseOrdersPage() {
                 <tr style={{ background:T.surface }}>
                   <Th>PO Reference</Th><Th>Supplier</Th><Th>Season</Th>
                   <Th>Ex-Factory</Th><Th>Total Cost</Th><Th>Deposit</Th>
-                  <Th>Shipments</Th><Th>Split Status</Th>
+                  <Th>Status</Th><Th>Shipments</Th><Th>Split Status</Th>
                   <Th>PO Checklist</Th><Th></Th>
                 </tr>
               </thead>
@@ -893,6 +901,7 @@ export default function PurchaseOrdersPage() {
                       <Td style={{ color:T.muted, fontSize:12 }}>{po.ex_factory_date||'—'}</Td>
                       <Td style={{ fontFamily:'monospace', fontWeight:700, color:T.accent }}>{fmt(po.total_cost_value, po.currency||'USD')}</Td>
                       <Td style={{ color:T.muted, fontSize:12 }}>{fmt(po.deposit_cost_value, po.currency||'USD')}</Td>
+                      <Td><span style={{ background:(PO_STATUS_CFG[getPoStatus(po)]||{}).bg||'transparent', color:(PO_STATUS_CFG[getPoStatus(po)]||{}).color||'#888', borderRadius:4, padding:'2px 8px', fontSize:11, fontWeight:700 }}>{getPoStatus(po)}</span></Td>
                       <Td>
                         <div style={{ display:'flex', gap:4 }}>
                           {ukSh.length>0 && <DCBadge dc="UK" />}
