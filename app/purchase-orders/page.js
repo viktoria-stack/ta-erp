@@ -3,23 +3,8 @@ import { useEffect, useState, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import Shell from '@/components/Shell'
 import { T, KPI, Card, Badge, Th, Td, Input, BtnPrimary, BtnGhost, Modal, CURRENCIES, fmt, Loading, ErrorMsg } from '@/components/ui'
-import { getPurchaseOrders, getSuppliers, createPurchaseOrder, updatePurchaseOrder, updateShipment, addShipment } from '@/lib/supabase'
+import { getPurchaseOrders, getSuppliers, createPurchaseOrder, updatePurchaseOrder, updateShipment, addShipment, getPoLines } from '@/lib/supabase'
 import PackingListPanel from '@/components/PackingListPanel'
-
-// --- PO STATUS HELPER ---
-const getPoStatus = (po) => {
-  const ships = po.shipments || []
-  if (ships.length === 0) return 'In production'
-  if (ships.every(s => s.status && (s.status.includes('Booked in') || s.status.includes('Delivered')))) return 'Completed'
-  if (ships.some(s => s.status && s.status.includes('Receipt'))) return 'Receipt in progress'
-  return 'In transit'
-}
-const PO_STATUS_CFG = {
-  'In production':       { color: '#f59e0b', bg: '#f59e0b20' },
-  'In transit':          { color: '#3b82f6', bg: '#3b82f620' },
-  'Receipt in progress': { color: '#f97316', bg: '#f9731620' },
-  'Completed':           { color: '#22c55e', bg: '#22c55e20' },
-}
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 const SHIPMENT_STATUSES = [
@@ -331,9 +316,9 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
   useEffect(() => {
     if (tab === 'lines' && lines.length === 0) {
       setLinesLoading(true)
-      import('@/lib/supabase').then(({ getPoLines }) =>
-        getPoLines(po.id).then(data => { setLines(data); setLinesLoading(false) })
-      )
+      getPoLines(po.id)
+        .then(data => { setLines(data); setLinesLoading(false) })
+        .catch(() => setLinesLoading(false))
     }
   }, [tab])
   const isUnsplit = shipments.length === 0 && !po.po_splits_confirmed
@@ -757,16 +742,14 @@ export default function PurchaseOrdersPage() {
     return matchDC && matchStatus && matchSearch
   })
 
-  const [poStatusFilter, setPoStatusFilter] = useState('All')
-  const filteredPOs = pos.filter(po => {
+  const filteredPOs = pos.filter(po=>{
     const matchSearch = !search || po.id.toLowerCase().includes(search.toLowerCase()) || (po.supplier_name||'').toLowerCase().includes(search.toLowerCase())
-    const matchStatus = poStatusFilter === 'All' || getPoStatus(po) === poStatusFilter
-    return matchSearch && matchStatus
+    return matchSearch
   })
 
-  const inProduction = pos.filter(po=>(po.shipments||[]).length===0).length
+  const inProduction = allShipments.filter(s=>s.status==='In production').length
   const inTransit = allShipments.filter(s=>s.status?.includes('transit')).length
-  const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in')||s.status?.includes('Delivered')).length
+  const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in')).length
 
   return (
     <Shell title="Purchase Orders">
@@ -884,7 +867,7 @@ export default function PurchaseOrdersPage() {
                 <tr style={{ background:T.surface }}>
                   <Th>PO Reference</Th><Th>Supplier</Th><Th>Season</Th>
                   <Th>Ex-Factory</Th><Th>Total Cost</Th><Th>Deposit</Th>
-                  <Th>Status</Th><Th>Shipments</Th><Th>Split Status</Th>
+                  <Th>Shipments</Th><Th>Split Status</Th>
                   <Th>PO Checklist</Th><Th></Th>
                 </tr>
               </thead>
@@ -901,7 +884,6 @@ export default function PurchaseOrdersPage() {
                       <Td style={{ color:T.muted, fontSize:12 }}>{po.ex_factory_date||'—'}</Td>
                       <Td style={{ fontFamily:'monospace', fontWeight:700, color:T.accent }}>{fmt(po.total_cost_value, po.currency||'USD')}</Td>
                       <Td style={{ color:T.muted, fontSize:12 }}>{fmt(po.deposit_cost_value, po.currency||'USD')}</Td>
-                      <Td><span style={{ background:(PO_STATUS_CFG[getPoStatus(po)]||{}).bg||'transparent', color:(PO_STATUS_CFG[getPoStatus(po)]||{}).color||'#888', borderRadius:4, padding:'2px 8px', fontSize:11, fontWeight:700 }}>{getPoStatus(po)}</span></Td>
                       <Td>
                         <div style={{ display:'flex', gap:4 }}>
                           {ukSh.length>0 && <DCBadge dc="UK" />}
