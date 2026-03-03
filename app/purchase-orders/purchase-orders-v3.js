@@ -306,9 +306,20 @@ function ShipmentPanel({ shipment, currency, onSave }) {
 // ─── PO DETAIL MODAL ──────────────────────────────────────────
 function PODetail({ po, onClose, onSaved, onSplit }) {
   const [tab, setTab] = useState(po.shipments?.length > 0 ? 'shipments' : 'lines')
-  const lines = po.po_lines || []
+  const [lines, setLines] = useState(po.po_lines || [])
+  const [linesLoading, setLinesLoading] = useState(false)
   const shipments = (po.shipments || []).sort((a,b)=>a.dc.localeCompare(b.dc))
-  const isUnsplit = shipments.length === 0
+
+  // Load line items on demand when tab is opened
+  useEffect(() => {
+    if (tab === 'lines' && lines.length === 0) {
+      setLinesLoading(true)
+      import('@/lib/supabase').then(({ getPoLines }) =>
+        getPoLines(po.id).then(data => { setLines(data); setLinesLoading(false) })
+      )
+    }
+  }, [tab])
+  const isUnsplit = shipments.length === 0 && !po.po_splits_confirmed
   const totalUK = lines.reduce((s,l)=>s+(l.qty_uk||0),0)
   const totalUSA = lines.reduce((s,l)=>s+(l.qty_usa||0),0)
   const grandTotal = lines.reduce((s,l)=>s+lineTotal(l),0)
@@ -388,7 +399,9 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
 
       {tab === 'lines' && (
         <div style={{ overflowX:'auto' }}>
-          {lines.length === 0 ? (
+          {linesLoading ? (
+            <div style={{ padding:32, textAlign:'center', color:T.muted, fontSize:13 }}>Loading line items…</div>
+          ) : lines.length === 0 ? (
             <div style={{ padding:32, textAlign:'center', color:T.muted, fontSize:13 }}>No line items recorded for this PO</div>
           ) : (
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:900 }}>
@@ -412,7 +425,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
                     <Td style={{ color:T.muted, fontFamily:'monospace', fontSize:11 }}>{l.sku||'—'}</Td>
                     <Td style={{ textAlign:'right', color:T.muted }}>{fmt(l.cost_price, po.currency||'USD')}</Td>
                     <Td style={{ textAlign:'right', fontWeight:600 }}>{(l.qty_uk||0).toLocaleString()}</Td>
-                    <Td style={{ textAlign:'right', fontWeight:600 }}>{(l.qty_usa||0).toLocaleString()}</Td>
+                    <Td style={{ textAlign:'right', fontWeight:600 }}>{(l.qty_us||l.qty_usa||0).toLocaleString()}</Td>
                     <Td style={{ textAlign:'right', color:T.green, fontWeight:700 }}>{(l.confirmed_xf||0).toLocaleString()}</Td>
                     <Td style={{ textAlign:'right', color:T.accent, fontWeight:700 }}>{fmt(lineTotal(l), po.currency||'USD')}</Td>
                   </tr>
@@ -718,7 +731,7 @@ export default function PurchaseOrdersPage() {
   useEffect(()=>{ load() },[])
 
   const allShipments = pos.flatMap(po=>(po.shipments||[]).map(sh=>({...sh,po})))
-  const unsplitPOs = pos.filter(po=>!(po.shipments?.length>0))
+  const unsplitPOs = pos.filter(po=>!(po.shipments?.length>0) && !po.po_splits_confirmed)
 
   const filteredShipments = allShipments.filter(sh=>{
     const matchDC = dcFilter==='All' || sh.dc===dcFilter
@@ -858,7 +871,7 @@ export default function PurchaseOrdersPage() {
               </thead>
               <tbody>
                 {filteredPOs.map(po=>{
-                  const isUnsplit = !(po.shipments?.length>0)
+                  const isUnsplit = !(po.shipments?.length>0) && !po.po_splits_confirmed
                   const ukSh = (po.shipments||[]).filter(s=>s.dc==='UK')
                   const usSh = (po.shipments||[]).filter(s=>s.dc==='US')
                   return (
