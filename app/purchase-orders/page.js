@@ -90,13 +90,13 @@ function SplitModal({ po, onClose, onSaved }) {
     if (includeUK) shipments.push({
       po_id: po.id, shipment_ref: `${po.id}UK${ukType}`,
       dc: 'UK', shipment_type: ukType, units: +ukUnits, cartons: 0,
-      status: 'In production', added_to_warehouse:false, delivery_booked:false,
+      status: 'In transit - awaiting freight info', added_to_warehouse:false, delivery_booked:false,
       quantities_verified:false, stock_on_shopify:false,
     })
     if (includeUSA) shipments.push({
       po_id: po.id, shipment_ref: `${po.id}USA${usaType}`,
       dc: 'US', shipment_type: usaType, units: +usaUnits, cartons: 0,
-      status: 'In production', added_to_warehouse:false, delivery_booked:false,
+      status: 'In transit - awaiting freight info', added_to_warehouse:false, delivery_booked:false,
       quantities_verified:false, stock_on_shopify:false,
     })
     for (const s of shipments) await addShipment(s)
