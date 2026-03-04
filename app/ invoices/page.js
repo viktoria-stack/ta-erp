@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Shell from '@/components/Shell'
 import { T, Th, Td, Loading } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase' 
 
 const fmt = (n, cur = 'USD') => new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n || 0)
 const fmtFull = (n, cur = 'USD') => new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur }).format(n || 0)
