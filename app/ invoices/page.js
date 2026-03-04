@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import Shell from '@/components/Shell'
-import { T, Th, Td, Loading } from '@/components/ui'
+import { T, Th, Td, Loading } from '@/components/ui' 
 import { supabase } from '@/lib/supabase' 
 
 const fmt = (n, cur = 'USD') => new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n || 0)
