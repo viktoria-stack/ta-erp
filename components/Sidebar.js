@@ -1,7 +1,8 @@
 'use client'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { T } from './ui'
+import { createBrowserClient } from '@supabase/ssr'
 
 const NAV = [
   { href: '/dashboard',        label: 'Dashboard',        icon: '▤' },
@@ -12,8 +13,20 @@ const NAV = [
   { href: '/sales',            label: 'Sales',            icon: '📈' },
 ]
 
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+)
+
 export default function Sidebar() {
   const path = usePathname()
+  const router = useRouter()
+
+  const logout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+    router.refresh()
+  }
 
   return (
     <div style={{ width: 210, background: T.surface, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: '100vh' }}>
@@ -48,8 +61,24 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div style={{ padding: '14px 18px', borderTop: `1px solid ${T.border}`, fontSize: 11, color: T.muted }}>
-        © {new Date().getFullYear()} Tailored Athlete
+      <div style={{ padding: '14px 10px', borderTop: `1px solid ${T.border}` }}>
+        <button
+          onClick={logout}
+          style={{
+            width: '100%', padding: '8px 12px',
+            background: 'transparent', border: `1px solid ${T.border}`,
+            borderRadius: 6, color: T.muted, fontSize: 12,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+            transition: 'all 0.1s',
+          }}
+          onMouseOver={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444' }}
+          onMouseOut={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted }}
+        >
+          <span>⎋</span> Sign Out
+        </button>
+        <div style={{ fontSize: 10, color: T.muted, marginTop: 8, paddingLeft: 4 }}>
+          © {new Date().getFullYear()} Tailored Athlete
+        </div>
       </div>
     </div>
   )
