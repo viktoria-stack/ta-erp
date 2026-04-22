@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { T } from './ui'
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 
 const NAV = [
   { href: '/dashboard',        label: 'Dashboard',        icon: '▤' },
@@ -13,7 +13,7 @@ const NAV = [
   { href: '/sales',            label: 'Sales',            icon: '📈' },
 ]
 
-const supabase = createBrowserClient(
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 )
