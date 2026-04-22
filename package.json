@@ -1,44 +1,23 @@
-import { createServerClient } from '@supabase/ssr'
-import { NextResponse } from 'next/server'
-
-export async function middleware(request) {
-  let supabaseResponse = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  const { data: { user } } = await supabase.auth.getUser()
-  const { pathname } = request.nextUrl
-
-  // Allow login page always
-  if (pathname.startsWith('/login')) {
-    // If already logged in, redirect to dashboard
-    if (user) return NextResponse.redirect(new URL('/dashboard', request.url))
-    return supabaseResponse
+{
+  "name": "tailored-athlete-erp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.5.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "next": "14.1.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "eslint": "^8",
+    "eslint-config-next": "14.1.0"
   }
-
-  // Protect everything else
-  if (!user) {
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
-
-  return supabaseResponse
-}
-
-export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }
