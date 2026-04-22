@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -14,7 +14,7 @@ const T = {
   red: '#EF4444', green: '#22C55E',
 }
 
-export default function SetPasswordPage() {
+function SetPasswordInner() {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
@@ -99,5 +99,13 @@ export default function SetPasswordPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SetPasswordPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: '#111318', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Arial' }}>Loading…</div>}>
+      <SetPasswordInner />
+    </Suspense>
   )
 }
