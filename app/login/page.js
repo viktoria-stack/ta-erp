@@ -38,7 +38,7 @@ export default function LoginPage() {
         : error.message)
       setLoading(false)
     } else {
-      window.location.href = '/dashboard'
+      setTimeout(() => { window.location.href = '/dashboard' }, 100)
     }
   }
 
