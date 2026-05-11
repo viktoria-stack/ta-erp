@@ -59,6 +59,16 @@ const milestoneStatus = (amount, due_date, paid_date) => {
   return 'upcoming'
 }
 
+const invoiceStatus = (inv) => {
+  const hasDep = inv.deposit_amount > 0
+  const hasBal = inv.balance_amount > 0
+  const depPaid = !hasDep || !!inv.deposit_paid_date
+  const balPaid = !hasBal || !!inv.balance_paid_date
+  if (depPaid && balPaid) return 'paid'
+  if (hasDep && inv.deposit_paid_date) return 'partial'
+  return 'unpaid'
+}
+
 // ─── INVOICE FORM (shared by Add + Edit) ──────────────────────
 function InvoiceForm({ form, set, pos, pdf, setPdf, isEdit }) {
   return (
@@ -349,7 +359,7 @@ export default function InvoicesPage() {
 
   const t = today()
   const filtered = invoices.filter(inv => {
-    const matchStatus = statusFilter === 'All' || inv.status === statusFilter
+    const matchStatus = statusFilter === 'All' || invoiceStatus(inv) === statusFilter
     const matchSearch = !search || inv.invoice_number?.toLowerCase().includes(search.toLowerCase()) || inv.supplier_name?.toLowerCase().includes(search.toLowerCase())
     return matchStatus && matchSearch
   })
@@ -405,7 +415,7 @@ export default function InvoicesPage() {
               </tr></thead>
               <tbody>
                 {filtered.map(inv => {
-                  const sc = STATUS_CFG[inv.status] || STATUS_CFG.unpaid
+                  const sc = STATUS_CFG[invoiceStatus(inv)]
                   const depOD = inv.deposit_amount > 0 && !inv.deposit_paid_date && inv.deposit_due_date && inv.deposit_due_date < t
                   const balOD = inv.balance_amount > 0 && !inv.balance_paid_date && inv.balance_due_date && inv.balance_due_date < t
                   return (

@@ -10,7 +10,7 @@ export async function middleware(request) {
 
   // Check for any supabase auth cookie
   const hasCookie = [...request.cookies.getAll()].some(c =>
-    c.name.includes('auth-token') || c.name.includes('supabase')
+    c.name.startsWith('sb-')
   )
 
   if (!hasCookie) {
