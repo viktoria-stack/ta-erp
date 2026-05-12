@@ -161,6 +161,7 @@ export default function SuppliersPage() {
   const [editing, setEditing] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('Active')
 
   const load = () => {
     setLoading(true)
@@ -169,13 +170,15 @@ export default function SuppliersPage() {
 
   useEffect(() => { load() }, [])
 
-  const filtered = suppliers.filter(s =>
-    !search ||
-    s.name?.toLowerCase().includes(search.toLowerCase()) ||
-    s.code?.toLowerCase().includes(search.toLowerCase()) ||
-    s.product_types?.toLowerCase().includes(search.toLowerCase()) ||
-    s.country_of_origin?.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = suppliers.filter(s => {
+    const matchStatus = statusFilter === 'All' || (s.status || 'Active') === statusFilter
+    const matchSearch = !search ||
+      s.name?.toLowerCase().includes(search.toLowerCase()) ||
+      s.code?.toLowerCase().includes(search.toLowerCase()) ||
+      s.product_types?.toLowerCase().includes(search.toLowerCase()) ||
+      s.country_of_origin?.toLowerCase().includes(search.toLowerCase())
+    return matchStatus && matchSearch
+  })
 
   const active = suppliers.filter(s => s.status === 'Active').length
 
@@ -205,11 +208,17 @@ export default function SuppliersPage() {
 
       {/* Controls */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 10 }}>
-        <input
-          placeholder="Search supplier, code, product type…"
-          value={search} onChange={e => setSearch(e.target.value)}
-          style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: '7px 12px', color: T.text, fontSize: 13, width: 300, outline: 'none' }}
-        />
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {['Active', 'Inactive', 'All'].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)} style={{ background: statusFilter === s ? (s === 'Active' ? T.green : s === 'Inactive' ? T.red : T.accent) : T.subtle, color: statusFilter === s ? '#fff' : T.muted, border: 'none', borderRadius: 4, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{s}</button>
+          ))}
+          <div style={{ width: 1, height: 20, background: T.border }} />
+          <input
+            placeholder="Search supplier, code, product type…"
+            value={search} onChange={e => setSearch(e.target.value)}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: '7px 12px', color: T.text, fontSize: 13, width: 280, outline: 'none' }}
+          />
+        </div>
         <BtnPrimary onClick={() => setShowNew(true)}>+ New Supplier</BtnPrimary>
       </div>
 
