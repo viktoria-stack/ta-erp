@@ -19,6 +19,22 @@ const SHIPMENT_STATUSES = [
   'Booked in & checked',
   'Delivered + booked in',
 ]
+
+const STATUS_SHORT = {
+  'In production': 'In Production',
+  'In transit - awaiting freight info': 'In Transit',
+  'Receipt in progress': 'Receipt in Progress',
+  'Delivered': 'Delivered',
+  'Booked in & checked': 'Booked In',
+  'Delivered + booked in': 'Booked In',
+}
+
+function fmtDate(val) {
+  if (!val) return '—'
+  const d = new Date(val)
+  if (isNaN(d)) return val
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
 const FREIGHT_FORWARDERS = ['HuianExpress','JET','KTL','ACS logistics','ICL Logistics','Evergreen logistics','Vina Happy Shipping','Turkmen logistics','Supplier']
 const SIZES = ['XS','S','M','L','XL','XXL']
 const EMPTY_LINE = { product_name:'', size:'M', cost_price:'', design_ref:'', colour_code:'', sku:'', qty_uk:0, qty_usa:0, confirmed_xf:0 }
@@ -802,9 +818,10 @@ export default function PurchaseOrdersPage() {
               <button key={d} onClick={()=>setDcFilter(d)} style={{ background:dcFilter===d?(d==='UK'?'#3b82f6':d==='US'?'#8b5cf6':T.accent):T.subtle, color:dcFilter===d?'#fff':T.muted, border:'none', borderRadius:4, padding:'5px 12px', fontSize:12, fontWeight:700, cursor:'pointer' }}>{d}</button>
             ))}
             <div style={{ width:1, height:20, background:T.border }} />
-            {['All',...SHIPMENT_STATUSES].map(s=>(
-              <button key={s} onClick={()=>setStatusFilter(s)} style={{ background:statusFilter===s?T.accent:T.subtle, color:statusFilter===s?'#fff':T.muted, border:'none', borderRadius:4, padding:'5px 10px', fontSize:11, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>{s}</button>
-            ))}
+            <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, padding:'5px 10px', color:statusFilter==='All'?T.muted:T.accent, fontSize:12, fontWeight:600, cursor:'pointer', outline:'none' }}>
+              <option value="All">All Statuses</option>
+              {SHIPMENT_STATUSES.map(s=><option key={s} value={s}>{STATUS_SHORT[s]||s}</option>)}
+            </select>
           </>}
         </div>
 
@@ -823,7 +840,7 @@ export default function PurchaseOrdersPage() {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:T.surface }}>
-                  <Th>Shipment Ref</Th><Th>Supplier</Th><Th>DC</Th><Th>Type</Th>
+                  <Th>Shipment Ref</Th><Th>Supplier</Th><Th>DC</Th>
                   <Th>Status</Th><Th>Ex-Factory</Th><Th>ETA</Th>
                   <Th>Freight Forwarder</Th>
                   <Th style={{ textAlign:'right' }}>Units</Th>
@@ -837,10 +854,9 @@ export default function PurchaseOrdersPage() {
                     <Td style={{ fontFamily:'monospace', fontSize:11, color:T.accent, fontWeight:700 }}>{sh.shipment_ref}</Td>
                     <Td style={{ fontWeight:600, fontSize:13 }}>{sh.po?.supplier_name||sh.po?.supplier_ref}</Td>
                     <Td><DCBadge dc={sh.dc} /></Td>
-                    <Td><span style={{ fontSize:10, color:T.muted, background:T.subtle, borderRadius:3, padding:'1px 6px', fontWeight:700 }}>{sh.shipment_type}</span></Td>
-                    <Td><span style={{ color:shipStatusColor(sh.status), fontSize:12, fontWeight:600 }}>{sh.status}</span></Td>
-                    <Td style={{ color:T.muted, fontSize:12 }}>{sh.po?.ex_factory_date||'—'}</Td>
-                    <Td style={{ color:T.muted, fontSize:12 }}>{sh.eta||'—'}</Td>
+                    <Td><span style={{ color:shipStatusColor(sh.status), fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>{STATUS_SHORT[sh.status]||sh.status}</span></Td>
+                    <Td style={{ color:T.muted, fontSize:12, whiteSpace:'nowrap' }}>{fmtDate(sh.po?.ex_factory_date)}</Td>
+                    <Td style={{ color:T.muted, fontSize:12, whiteSpace:'nowrap' }}>{fmtDate(sh.eta)}</Td>
                     <Td style={{ color:T.muted, fontSize:12 }}>{sh.freight_forwarder||'—'}</Td>
                     <Td style={{ textAlign:'right', fontWeight:700 }}>{(sh.units||0).toLocaleString()}</Td>
                     <Td style={{ fontFamily:'monospace', fontSize:11, color:T.muted, maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sh.tracking_number||'—'}</Td>
@@ -861,7 +877,7 @@ export default function PurchaseOrdersPage() {
                     <Td style={{ color:T.muted, fontSize:16 }}>›</Td>
                   </tr>
                 ))}
-                {filteredShipments.length===0 && <tr><td colSpan={12} style={{ padding:32, textAlign:'center', color:T.muted }}>No shipments found</td></tr>}
+                {filteredShipments.length===0 && <tr><td colSpan={11} style={{ padding:32, textAlign:'center', color:T.muted }}>No shipments found</td></tr>}
               </tbody>
             </table>
           </div>
