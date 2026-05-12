@@ -12,7 +12,6 @@ const PO_STATUS_CFG = {'In production':{color:'#f59e0b',bg:'#f59e0b20'},'In tran
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 const SHIPMENT_STATUSES = [
-  'In production',
   'In transit - awaiting freight info',
   'Receipt in progress',
   'Delivered',
@@ -622,7 +621,7 @@ function ImportModal({ onClose, onSaved }) {
           shipment_ref: rawRef,
           dc: resolvedDC,
           shipment_type: shipmentType,
-          status: String(get('po.?status|^status$')||'In production').trim(),
+          status: (() => { const s = String(get('po.?status|^status$')||'').trim(); return (!s || s === 'In production') ? 'In transit - awaiting freight info' : s })(),
           units: parseInt(String(get('^units$')||'0').replace(/,/g,''))||0,
           cartons: parseInt(String(get('carton')||'0').replace(/,/g,''))||0,
           freight_forwarder: String(get('freight.?forward')||'').trim(),
