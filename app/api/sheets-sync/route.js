@@ -1,13 +1,13 @@
 export const runtime = 'nodejs'
 
-import { createSign, createPrivateKey } from 'crypto'
+import { createSign, createPrivateKey } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
 const SPREADSHEET_ID = '1-O2BD5mQmZgJgpIgefbqgDtexeoUQ8x9PQfZLYV-MJw'
 const SHEET_GID = '434068651'
 
-const supabase = createClient(
+const getSupabase = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 )
@@ -30,7 +30,7 @@ async function getAccessToken() {
   }))
 
   const signingInput = `${header}.${payload}`
-  const privateKey = createPrivateKey({ key: rawKey, format: 'pem' })
+  const privateKey = createPrivateKey(rawKey)
   const signer = createSign('RSA-SHA256')
   signer.update(signingInput)
   const signature = signer.sign(privateKey, 'base64')
@@ -169,28 +169,31 @@ export async function POST() {
       }
     }
 
+    const supabase = getSupabase()
+    const allPOs = Object.values(poMap).map(({ po }) => po)
+    const allShipments = Object.values(poMap).flatMap(({ po, shipments }) =>
+      shipments.map(sh => ({ ...sh, po_id: po.id }))
+    )
+
+    const CHUNK = 100
     let upsertedPOs = 0
     let upsertedShipments = 0
     const errors = []
 
-    for (const { po, shipments } of Object.values(poMap)) {
-      const { error: poErr } = await supabase
-        .from('purchase_orders')
-        .upsert(po, { onConflict: 'id' })
-      if (poErr) { errors.push(`PO ${po.id}: ${poErr.message}`); continue }
-      upsertedPOs++
+    for (let i = 0; i < allPOs.length; i += CHUNK) {
+      const { error } = await supabase.from('purchase_orders').upsert(allPOs.slice(i, i + CHUNK), { onConflict: 'id' })
+      if (error) errors.push(`POs batch ${i}: ${error.message}`)
+      else upsertedPOs += Math.min(CHUNK, allPOs.length - i)
+    }
 
-      for (const sh of shipments) {
-        const { error: shErr } = await supabase
-          .from('shipments')
-          .upsert({ ...sh, po_id: po.id }, { onConflict: 'shipment_ref' })
-        if (shErr) errors.push(`Shipment ${sh.shipment_ref}: ${shErr.message}`)
-        else upsertedShipments++
-      }
+    for (let i = 0; i < allShipments.length; i += CHUNK) {
+      const { error } = await supabase.from('shipments').upsert(allShipments.slice(i, i + CHUNK), { onConflict: 'shipment_ref' })
+      if (error) errors.push(`Shipments batch ${i}: ${error.message}`)
+      else upsertedShipments += Math.min(CHUNK, allShipments.length - i)
     }
 
     return NextResponse.json({ upsertedPOs, upsertedShipments, errors })
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ error: err.message, stack: err.stack?.split('\n').slice(0,3).join(' | ') }, { status: 500 })
   }
 }
