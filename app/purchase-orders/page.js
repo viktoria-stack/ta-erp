@@ -745,6 +745,8 @@ export default function PurchaseOrdersPage() {
   const [checkedIds, setCheckedIds] = useState(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -772,6 +774,20 @@ export default function PurchaseOrdersPage() {
     const matchStatus = poStatusFilter === 'All' || getPoStatus(po) === poStatusFilter
     return matchSearch && matchStatus
   })
+
+  const doSheetsSync = async () => {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch('/api/sheets-sync', { method: 'POST' })
+      const data = await res.json()
+      setSyncResult(data)
+      if (!data.error) load()
+    } catch (e) {
+      setSyncResult({ error: e.message })
+    }
+    setSyncing(false)
+  }
 
   const toggleCheck = (id) => setCheckedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toggleAll = () => setCheckedIds(checkedIds.size === filteredShipments.length ? new Set() : new Set(filteredShipments.map(s => s.id)))
@@ -868,11 +884,24 @@ export default function PurchaseOrdersPage() {
           <input placeholder="Search PO / supplier…" value={search} onChange={e=>setSearch(e.target.value)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, padding:'7px 12px', color:T.text, fontSize:13, width:220, outline:'none' }} />
           {view==='shipments' && <BtnGhost onClick={exportExcel}>⬇ Export Excel</BtnGhost>}
           <BtnGhost onClick={()=>setShowImport(true)}>⬆ Import Excel</BtnGhost>
+          <BtnGhost onClick={doSheetsSync} disabled={syncing} style={{ color: syncing ? T.muted : '#34d399', borderColor: '#34d39940' }}>
+            {syncing ? 'Syncing…' : '⟳ Sync Google Sheets'}
+          </BtnGhost>
           <BtnPrimary onClick={()=>setShowNew(true)}>+ New PO</BtnPrimary>
         </div>
       </div>
 
       {error && <ErrorMsg msg={error} />}
+
+      {syncResult && (
+        <div style={{ background: syncResult.error ? '#ef444415' : '#22c55e15', border: `1px solid ${syncResult.error ? '#ef444440' : '#22c55e40'}`, borderRadius:8, padding:'10px 16px', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          {syncResult.error
+            ? <span style={{ fontSize:13, color:'#ef4444' }}>⚠ Sync failed: {syncResult.error}</span>
+            : <span style={{ fontSize:13, color:'#22c55e' }}>✓ Synced {syncResult.upsertedPOs} POs and {syncResult.upsertedShipments} shipments from Google Sheets{syncResult.errors?.length > 0 ? ` (${syncResult.errors.length} errors)` : ''}</span>
+          }
+          <button onClick={()=>setSyncResult(null)} style={{ background:'none', border:'none', color:T.muted, cursor:'pointer', fontSize:16 }}>×</button>
+        </div>
+      )}
 
       {/* Bulk action bar */}
       {checkedIds.size > 0 && (
