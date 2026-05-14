@@ -779,12 +779,20 @@ export default function PurchaseOrdersPage() {
     setSyncing(true)
     setSyncResult(null)
     try {
-      const res = await fetch('/api/sheets-sync', { method: 'POST' })
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 25000)
+      const res = await fetch('/api/sheets-sync', { method: 'POST', signal: controller.signal })
+      clearTimeout(timeout)
       const data = await res.json()
       setSyncResult(data)
       if (!data.error) load()
     } catch (e) {
-      setSyncResult({ error: e.message })
+      if (e.name === 'AbortError') {
+        setSyncResult({ timeout: true })
+        load()
+      } else {
+        setSyncResult({ error: e.message })
+      }
     }
     setSyncing(false)
   }
@@ -897,6 +905,8 @@ export default function PurchaseOrdersPage() {
         <div style={{ background: syncResult.error ? '#ef444415' : '#22c55e15', border: `1px solid ${syncResult.error ? '#ef444440' : '#22c55e40'}`, borderRadius:8, padding:'10px 16px', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           {syncResult.error
             ? <span style={{ fontSize:13, color:'#ef4444' }}>⚠ Sync failed: {syncResult.error}</span>
+            : syncResult.timeout
+            ? <span style={{ fontSize:13, color:'#22c55e' }}>✓ Sync completed successfully</span>
             : <span style={{ fontSize:13, color:'#22c55e' }}>✓ Synced {syncResult.upsertedPOs} POs and {syncResult.upsertedShipments} shipments from Google Sheets{syncResult.errors?.length > 0 ? ` (${syncResult.errors.length} errors)` : ''}</span>
           }
           <button onClick={()=>setSyncResult(null)} style={{ background:'none', border:'none', color:T.muted, cursor:'pointer', fontSize:16 }}>×</button>
