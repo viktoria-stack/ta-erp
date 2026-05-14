@@ -742,6 +742,9 @@ export default function PurchaseOrdersPage() {
   const [splitting, setSplitting] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [checkedIds, setCheckedIds] = useState(new Set())
+  const [bulkStatus, setBulkStatus] = useState('')
+  const [bulkSaving, setBulkSaving] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -769,6 +772,43 @@ export default function PurchaseOrdersPage() {
     const matchStatus = poStatusFilter === 'All' || getPoStatus(po) === poStatusFilter
     return matchSearch && matchStatus
   })
+
+  const toggleCheck = (id) => setCheckedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleAll = () => setCheckedIds(checkedIds.size === filteredShipments.length ? new Set() : new Set(filteredShipments.map(s => s.id)))
+
+  const doBulkUpdate = async () => {
+    if (!bulkStatus) return
+    setBulkSaving(true)
+    for (const id of checkedIds) await updateShipment(id, { status: bulkStatus })
+    setCheckedIds(new Set())
+    setBulkSaving(false)
+    load()
+  }
+
+  const exportExcel = () => {
+    const rows = filteredShipments.map(sh => ({
+      'Shipment Ref': sh.shipment_ref,
+      'Supplier': sh.po?.supplier_name || sh.po?.supplier_ref,
+      'DC': sh.dc,
+      'Status': sh.status,
+      'Ex-Factory': sh.po?.ex_factory_date || '',
+      'ETA': sh.eta || '',
+      'Freight Forwarder': sh.freight_forwarder || '',
+      'Units': sh.units || 0,
+      'Cartons': sh.cartons || 0,
+      'Tracking #': sh.tracking_number || '',
+      'Total Freight Cost': sh.total_freight_cost || 0,
+      'Import Tax': sh.import_tax_status || '',
+      'Added to Warehouse': sh.added_to_warehouse ? 'Yes' : 'No',
+      'Delivery Booked': sh.delivery_booked ? 'Yes' : 'No',
+      'Quantities Verified': sh.quantities_verified ? 'Yes' : 'No',
+      'Stock on Shopify': sh.stock_on_shopify ? 'Yes' : 'No',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Shipments')
+    XLSX.writeFile(wb, `shipments-export-${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
 
   const inProduction = pos.filter(po=>(po.shipments||[]).length===0).length
   const inTransit = allShipments.filter(s=>s.status?.includes('transit')).length
@@ -826,12 +866,29 @@ export default function PurchaseOrdersPage() {
 
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <input placeholder="Search PO / supplier…" value={search} onChange={e=>setSearch(e.target.value)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, padding:'7px 12px', color:T.text, fontSize:13, width:220, outline:'none' }} />
+          {view==='shipments' && <BtnGhost onClick={exportExcel}>⬇ Export Excel</BtnGhost>}
           <BtnGhost onClick={()=>setShowImport(true)}>⬆ Import Excel</BtnGhost>
           <BtnPrimary onClick={()=>setShowNew(true)}>+ New PO</BtnPrimary>
         </div>
       </div>
 
       {error && <ErrorMsg msg={error} />}
+
+      {/* Bulk action bar */}
+      {checkedIds.size > 0 && (
+        <div style={{ background:'#1e2330', border:`1px solid ${T.accent}40`, borderRadius:8, padding:'10px 16px', marginBottom:12, display:'flex', alignItems:'center', gap:12 }}>
+          <span style={{ fontSize:13, fontWeight:700, color:T.accent }}>{checkedIds.size} selected</span>
+          <select value={bulkStatus} onChange={e=>setBulkStatus(e.target.value)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, padding:'5px 10px', color:bulkStatus?T.text:T.muted, fontSize:12, outline:'none' }}>
+            <option value="">Change status to…</option>
+            {SHIPMENT_STATUSES.map(s=><option key={s} value={s}>{STATUS_SHORT[s]||s}</option>)}
+          </select>
+          <BtnPrimary onClick={doBulkUpdate} disabled={!bulkStatus||bulkSaving} style={{ padding:'5px 14px', fontSize:12 }}>
+            {bulkSaving ? 'Saving…' : 'Apply'}
+          </BtnPrimary>
+          <BtnGhost onClick={()=>setCheckedIds(new Set())} style={{ padding:'5px 12px', fontSize:12 }}>Cancel</BtnGhost>
+        </div>
+      )}
+
       {loading ? <Loading /> : view === 'shipments' ? (
         // ── SHIPMENTS TABLE ──
         <Card>
@@ -839,6 +896,7 @@ export default function PurchaseOrdersPage() {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:T.surface }}>
+                  <Th style={{ width:32 }}><input type="checkbox" checked={checkedIds.size===filteredShipments.length&&filteredShipments.length>0} onChange={toggleAll} /></Th>
                   <Th>Shipment Ref</Th><Th>Supplier</Th><Th>DC</Th>
                   <Th>Status</Th><Th>Ex-Factory</Th><Th>ETA</Th>
                   <Th>Freight Forwarder</Th>
@@ -850,6 +908,7 @@ export default function PurchaseOrdersPage() {
               <tbody>
                 {filteredShipments.map((sh,i)=>(
                   <tr key={sh.id||i} className="row-hover" onClick={()=>setSelected(sh.po)}>
+                    <Td onClick={e=>{ e.stopPropagation(); toggleCheck(sh.id) }} style={{ width:32 }}><input type="checkbox" checked={checkedIds.has(sh.id)} onChange={()=>toggleCheck(sh.id)} /></Td>
                     <Td style={{ fontFamily:'monospace', fontSize:11, color:T.accent, fontWeight:700 }}>{sh.shipment_ref}</Td>
                     <Td style={{ fontWeight:600, fontSize:13 }}>{sh.po?.supplier_name||sh.po?.supplier_ref}</Td>
                     <Td><DCBadge dc={sh.dc} /></Td>
@@ -876,7 +935,7 @@ export default function PurchaseOrdersPage() {
                     <Td style={{ color:T.muted, fontSize:16 }}>›</Td>
                   </tr>
                 ))}
-                {filteredShipments.length===0 && <tr><td colSpan={11} style={{ padding:32, textAlign:'center', color:T.muted }}>No shipments found</td></tr>}
+                {filteredShipments.length===0 && <tr><td colSpan={12} style={{ padding:32, textAlign:'center', color:T.muted }}>No shipments found</td></tr>}
               </tbody>
             </table>
           </div>
