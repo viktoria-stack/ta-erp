@@ -1,8 +1,10 @@
-import { google } from 'googleapis'
+export const runtime = 'nodejs'
+
+import { createSign, createPrivateKey } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_PO_ID
+const SPREADSHEET_ID = '1-O2BD5mQmZgJgpIgefbqgDtexeoUQ8x9PQfZLYV-MJw'
 const SHEET_GID = '434068651'
 
 const supabase = createClient(
@@ -10,14 +12,61 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 )
 
-function getAuth() {
-  return new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    },
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+function b64url(str) {
+  return Buffer.from(str).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+}
+
+async function getAccessToken() {
+  const rawKey = Buffer.from(process.env.GOOGLE_PRIVATE_KEY_B64 || '', 'base64').toString('utf-8')
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
+  const now = Math.floor(Date.now() / 1000)
+
+  const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const payload = b64url(JSON.stringify({
+    iss: email, sub: email,
+    aud: 'https://oauth2.googleapis.com/token',
+    scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+    iat: now, exp: now + 3600,
+  }))
+
+  const signingInput = `${header}.${payload}`
+  const privateKey = createPrivateKey({ key: rawKey, format: 'pem' })
+  const signer = createSign('RSA-SHA256')
+  signer.update(signingInput)
+  const signature = signer.sign(privateKey, 'base64')
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+
+  const jwt = `${signingInput}.${signature}`
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
   })
+  const { access_token, error } = await res.json()
+  if (error) throw new Error(`Auth failed: ${error}`)
+  return access_token
+}
+
+async function sheetsGet(token, range) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.error?.message || 'Sheets API error')
+  }
+  return res.json()
+}
+
+async function getSheetName(token) {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  const data = await res.json()
+  const sheet = data.sheets?.find(s => String(s.properties.sheetId) === SHEET_GID)
+  return sheet?.properties?.title
 }
 
 function colIdx(headers, pattern) {
@@ -46,21 +95,12 @@ function parsePORef(raw) {
 
 export async function POST() {
   try {
-    const auth = getAuth()
-    const sheets = google.sheets({ version: 'v4', auth })
+    const token = await getAccessToken()
+    const sheetName = await getSheetName(token)
+    if (!sheetName) return NextResponse.json({ error: 'Sheet tab not found' }, { status: 404 })
 
-    // Get sheet name from GID
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID })
-    const sheet = meta.data.sheets.find(s => String(s.properties.sheetId) === SHEET_GID)
-    if (!sheet) return NextResponse.json({ error: 'Sheet tab not found' }, { status: 404 })
-    const sheetName = sheet.properties.title
-
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: sheetName,
-    })
-
-    const rows = res.data.values || []
+    const data = await sheetsGet(token, sheetName)
+    const rows = data.values || []
     if (rows.length < 2) return NextResponse.json({ error: 'Sheet is empty' }, { status: 400 })
 
     const headers = rows[0].map(h => String(h).trim())
