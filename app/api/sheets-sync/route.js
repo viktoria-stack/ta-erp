@@ -140,6 +140,17 @@ export async function POST() {
           },
           shipments: [],
         }
+      } else {
+        // Fill in any PO-level fields that were empty from the first row
+        const po = poMap[base].po
+        if (!po.ex_factory_date)      po.ex_factory_date      = g(row, 'ex.?factory')
+        if (!po.supplier_ref)         po.supplier_ref         = g(row, 'supplier.?ref')
+        if (!po.supplier_name)        po.supplier_name        = g(row, 'supplier.?ref')
+        if (!po.seasonality)          po.seasonality          = g(row, 'season')
+        if (!po.total_cost_value)     po.total_cost_value     = cleanNum(g(row, 'total.?cost'))
+        if (!po.deposit_cost_value)   po.deposit_cost_value   = cleanNum(g(row, 'deposit.?cost'))
+        if (!po.deposit_payment_date) po.deposit_payment_date = g(row, 'deposit.?pay')
+        if (!po.po_splits_confirmed)  po.po_splits_confirmed  = cleanBool(g(row, 'po.?splits')) || hasSuffix
       }
 
       if (hasSuffix && dc) {
