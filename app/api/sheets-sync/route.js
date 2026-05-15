@@ -81,6 +81,28 @@ function cleanBool(val) {
   return String(val || '').toUpperCase() === 'TRUE'
 }
 
+const MONTHS = { jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12' }
+
+function cleanDate(val) {
+  const s = String(val || '').trim()
+  if (!s) return ''
+  // Already ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  // DD/MM/YYYY or D/M/YYYY
+  const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}`
+  // D-Mon-YYYY or DD-Mon-YYYY (e.g. 5-Jan-2025, 24-Feb-2025)
+  const dmon = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/)
+  if (dmon) {
+    const m = MONTHS[dmon[2].toLowerCase()]
+    if (m) return `${dmon[3]}-${m}-${dmon[1].padStart(2,'0')}`
+  }
+  // Mon-DD-YYYY or similar — try native parse as last resort
+  const d = new Date(s)
+  if (!isNaN(d)) return d.toISOString().slice(0, 10)
+  return s
+}
+
 function parsePORef(raw) {
   const po = raw.trim().replace('/', '')
   const shipmentType = /AIR/.test(po) ? 'AIR' : /TRUCK/.test(po) ? 'TRUCK' : 'SEA'
@@ -130,8 +152,8 @@ export async function POST() {
             seasonality: g(row, 'season'),
             total_cost_value: cleanNum(g(row, 'total.?cost')),
             deposit_cost_value: cleanNum(g(row, 'deposit.?cost')),
-            deposit_payment_date: g(row, 'deposit.?pay'),
-            ex_factory_date: g(row, 'ex.?factory'),
+            deposit_payment_date: cleanDate(g(row, 'deposit.?pay')),
+            ex_factory_date: cleanDate(g(row, 'ex.?factory')),
             currency: 'USD',
             skus_created: cleanBool(g(row, '^skus?')),
             barcodes_sent: cleanBool(g(row, 'barcode')),
@@ -143,13 +165,13 @@ export async function POST() {
       } else {
         // Fill in any PO-level fields that were empty from the first row
         const po = poMap[base].po
-        if (!po.ex_factory_date)      po.ex_factory_date      = g(row, 'ex.?factory')
+        if (!po.ex_factory_date)      po.ex_factory_date      = cleanDate(g(row, 'ex.?factory'))
         if (!po.supplier_ref)         po.supplier_ref         = g(row, 'supplier.?ref')
         if (!po.supplier_name)        po.supplier_name        = g(row, 'supplier.?ref')
         if (!po.seasonality)          po.seasonality          = g(row, 'season')
         if (!po.total_cost_value)     po.total_cost_value     = cleanNum(g(row, 'total.?cost'))
         if (!po.deposit_cost_value)   po.deposit_cost_value   = cleanNum(g(row, 'deposit.?cost'))
-        if (!po.deposit_payment_date) po.deposit_payment_date = g(row, 'deposit.?pay')
+        if (!po.deposit_payment_date) po.deposit_payment_date = cleanDate(g(row, 'deposit.?pay'))
         if (!po.po_splits_confirmed)  po.po_splits_confirmed  = cleanBool(g(row, 'po.?splits')) || hasSuffix
       }
 
@@ -163,15 +185,15 @@ export async function POST() {
           units: parseInt(g(row, '^units$').replace(/,/g, '')) || 0,
           cartons: parseInt(g(row, 'carton').replace(/,/g, '')) || 0,
           freight_forwarder: g(row, 'freight.?forward'),
-          shipment_date: g(row, 'shipment.?date'),
-          eta: g(row, '^eta$'),
+          shipment_date: cleanDate(g(row, 'shipment.?date')),
+          eta: cleanDate(g(row, '^eta$')),
           total_freight_cost: cleanNum(g(row, 'total.?freight')),
           unit_freight_cost_usd: cleanNum(g(row, '\\$usd|unit.?freight.*usd')),
           unit_freight_cost_gbp: cleanNum(g(row, 'new.?exchange|gbp.?new|unit.?freight.*gbp')),
           import_tax_status: g(row, 'import.?tax'),
           tracking_number: g(row, 'tracking'),
-          delivery_date: g(row, 'delivery.?date'),
-          booked_in_date: g(row, 'booked.?in'),
+          delivery_date: cleanDate(g(row, 'delivery.?date')),
+          booked_in_date: cleanDate(g(row, 'booked.?in')),
           added_to_warehouse: cleanBool(g(row, 'added.?to.?warehouse')),
           delivery_booked: cleanBool(g(row, 'delivery.?book')),
           quantities_verified: cleanBool(g(row, 'quantities.?ver')),
