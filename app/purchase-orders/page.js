@@ -59,6 +59,17 @@ function cleanNum(val) {
   return parseFloat(String(val||'0').replace(/[$£,\s]/g,''))||0
 }
 
+const deleteShipment = async (id) => {
+  const { error } = await supabase.from('shipments').delete().eq('id', id)
+  if (error) throw error
+}
+
+const deletePO = async (id) => {
+  await supabase.from('shipments').delete().eq('po_id', id)
+  const { error } = await supabase.from('purchase_orders').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ─── COLORS ───────────────────────────────────────────────────
 const shipStatusColor = (s) => ({
   'In production': T.yellow,
@@ -215,11 +226,19 @@ function SplitModal({ po, onClose, onSaved }) {
 }
 
 // ─── SHIPMENT PANEL (inside PO detail) ───────────────────────
-function ShipmentPanel({ shipment, currency, onSave, poLines = [], onSaved }) {
+function ShipmentPanel({ shipment, currency, onSave, poLines = [], onSaved, onDeleted }) {
   const [s, setS] = useState({ ...shipment })
   const [saving, setSaving] = useState(false)
+  const [confirmDel, setConfirmDel] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const upd = (f,v) => setS(p=>({...p,[f]:v}))
   const inp = { background:T.bg, border:`1px solid ${T.border}`, borderRadius:4, padding:'6px 8px', color:T.text, fontSize:12, outline:'none', width:'100%' }
+
+  const doDelete = async () => {
+    setDeleting(true)
+    try { await deleteShipment(s.id); onDeleted?.() }
+    catch(e) { alert(e.message); setDeleting(false) }
+  }
 
   return (
     <div style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:8, padding:16, marginBottom:12 }}>
@@ -229,9 +248,19 @@ function ShipmentPanel({ shipment, currency, onSave, poLines = [], onSaved }) {
           <span style={{ fontFamily:'monospace', fontSize:12, color:T.muted }}>{s.shipment_ref}</span>
           <span style={{ fontSize:10, color:T.muted, background:T.subtle, borderRadius:3, padding:'1px 6px', fontWeight:700 }}>{s.shipment_type}</span>
         </div>
-        <BtnPrimary onClick={async()=>{setSaving(true);await onSave(s.id,s);setSaving(false)}} style={{ padding:'5px 12px', fontSize:12 }} disabled={saving}>
-          {saving?'Saving…':'Save'}
-        </BtnPrimary>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          {!confirmDel
+            ? <button onClick={()=>setConfirmDel(true)} style={{ background:'none', border:`1px solid #ef444440`, color:'#ef4444', borderRadius:4, padding:'4px 10px', fontSize:11, cursor:'pointer' }}>Delete</button>
+            : <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                <span style={{ fontSize:11, color:'#ef4444' }}>Delete {s.shipment_ref}?</span>
+                <button onClick={doDelete} disabled={deleting} style={{ background:'#ef4444', border:'none', color:'#fff', borderRadius:4, padding:'4px 10px', fontSize:11, cursor:'pointer', fontWeight:700 }}>{deleting?'…':'Yes'}</button>
+                <button onClick={()=>setConfirmDel(false)} style={{ background:T.subtle, border:'none', color:T.muted, borderRadius:4, padding:'4px 10px', fontSize:11, cursor:'pointer' }}>Cancel</button>
+              </div>
+          }
+          <BtnPrimary onClick={async()=>{setSaving(true);await onSave(s.id,s);setSaving(false)}} style={{ padding:'5px 12px', fontSize:12 }} disabled={saving}>
+            {saving?'Saving…':'Save'}
+          </BtnPrimary>
+        </div>
       </div>
       <PackingListPanel shipment={shipment} poLines={poLines} onSaved={onSaved} />
 
@@ -331,7 +360,15 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
   const [tab, setTab] = useState(po.shipments?.length > 0 ? 'shipments' : 'lines')
   const [lines, setLines] = useState(po.po_lines || [])
   const [linesLoading, setLinesLoading] = useState(false)
+  const [confirmDelPO, setConfirmDelPO] = useState(false)
+  const [deletingPO, setDeletingPO] = useState(false)
   const shipments = (po.shipments || []).sort((a,b)=>a.dc.localeCompare(b.dc))
+
+  const doDeletePO = async () => {
+    setDeletingPO(true)
+    try { await deletePO(po.id); onSaved(); onClose() }
+    catch(e) { alert(e.message); setDeletingPO(false) }
+  }
 
   // Load line items on demand when tab is opened
   useEffect(() => {
@@ -414,7 +451,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
             <div style={{ padding:32, textAlign:'center', color:T.muted, fontSize:13 }}>No shipments yet — use "Split into Shipments" above</div>
           ) : (
             shipments.map(sh=>(
-              <ShipmentPanel key={sh.id} shipment={sh} currency={po.currency} onSave={async(id,updates)=>{ await updateShipment(id,updates); onSaved() }} poLines={lines} onSaved={onSaved} />
+              <ShipmentPanel key={sh.id} shipment={sh} currency={po.currency} onSave={async(id,updates)=>{ await updateShipment(id,updates); onSaved() }} poLines={lines} onSaved={onSaved} onDeleted={()=>{ onSaved(); onClose() }} />
             ))
           )}
         </div>
@@ -466,7 +503,17 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
         </div>
       )}
 
-      <div style={{ display:'flex', justifyContent:'flex-end', marginTop:20 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:20 }}>
+        <div>
+          {!confirmDelPO
+            ? <button onClick={()=>setConfirmDelPO(true)} style={{ background:'none', border:`1px solid #ef444440`, color:'#ef4444', borderRadius:5, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>Delete PO</button>
+            : <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <span style={{ fontSize:12, color:'#ef4444' }}>Delete {po.id} and all its shipments?</span>
+                <button onClick={doDeletePO} disabled={deletingPO} style={{ background:'#ef4444', border:'none', color:'#fff', borderRadius:5, padding:'7px 14px', fontSize:12, cursor:'pointer', fontWeight:700 }}>{deletingPO?'Deleting…':'Yes, delete'}</button>
+                <button onClick={()=>setConfirmDelPO(false)} style={{ background:T.subtle, border:'none', color:T.muted, borderRadius:5, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>Cancel</button>
+              </div>
+          }
+        </div>
         <BtnGhost onClick={onClose}>Close</BtnGhost>
       </div>
     </Modal>
