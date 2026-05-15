@@ -1,10 +1,25 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import Shell from '@/components/Shell'
 import { T, KPI, Card, Th, Td, BtnPrimary, BtnGhost, Loading, ErrorMsg, fmt } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 
 const PAGE_SIZE = 100
+
+async function fetchAllInventory({ search, store }) {
+  let query = supabase.from('inventory_restock').select('*')
+  if (store === 'UK') query = query.gt('qty_uk', 0)
+  else if (store === 'US') query = query.gt('qty_us', 0)
+  else if (store === 'Out of stock') query = query.eq('qty_uk', 0).eq('qty_us', 0)
+  else if (store === 'Low stock') query = query.or('qty_uk.lt.10,qty_us.lt.10').or('qty_uk.gt.0,qty_us.gt.0')
+  if (search && search.length >= 2) {
+    query = query.or(`product_name.ilike.%${search}%,sku.ilike.%${search}%,barcode.ilike.%${search}%,size.ilike.%${search}%`)
+  }
+  const { data, error } = await query.order('product_name').order('size')
+  if (error) throw error
+  return data || []
+}
 
 async function fetchInventory({ search, store, page }) {
   let query = supabase.from('inventory_restock').select('*', { count: 'exact' })
@@ -101,6 +116,37 @@ export default function InventoryPage() {
     setPage(0)
   }
 
+  const [exporting, setExporting] = useState(false)
+
+  const exportExcel = async () => {
+    setExporting(true)
+    try {
+      const all = await fetchAllInventory({ search, store })
+      const rows = all.map(p => ({
+        'Product Name': p.product_name || '',
+        'Size': p.size || '',
+        'SKU': p.sku || '',
+        'Barcode': p.barcode || '',
+        'UK Qty': p.qty_uk || 0,
+        'US Qty': p.qty_us || 0,
+        'Total': (p.qty_uk || 0) + (p.qty_us || 0),
+        'Cost Price (GBP)': p.cost_price || '',
+        'Retail Price (GBP)': p.retail_price || '',
+        'UK Incoming': p.incoming_uk || 0,
+        'UK Restock Date': p.restock_date_uk || '',
+        'US Incoming': p.incoming_us || 0,
+        'US Restock Date': p.restock_date_us || '',
+      }))
+      const ws = XLSX.utils.json_to_sheet(rows)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Inventory')
+      XLSX.writeFile(wb, `inventory-${store.toLowerCase().replace(/\s+/g,'-')}-${new Date().toISOString().slice(0,10)}.xlsx`)
+    } catch (e) {
+      console.error('Export failed:', e)
+    }
+    setExporting(false)
+  }
+
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const qtyStyle = (qty) => ({
     textAlign: 'right',
@@ -137,12 +183,17 @@ export default function InventoryPage() {
             }}>{f.label}</button>
           ))}
         </div>
-        <input
-          placeholder="Search product, SKU, barcode…"
-          value={searchInput}
-          onChange={e => handleSearch(e.target.value)}
-          style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: '7px 12px', color: T.text, fontSize: 13, width: 260, outline: 'none' }}
-        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            placeholder="Search product, SKU, barcode…"
+            value={searchInput}
+            onChange={e => handleSearch(e.target.value)}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: '7px 12px', color: T.text, fontSize: 13, width: 260, outline: 'none' }}
+          />
+          <BtnGhost onClick={exportExcel} disabled={exporting}>
+            {exporting ? 'Exporting…' : '⬇ Export Excel'}
+          </BtnGhost>
+        </div>
       </div>
 
       {error && <div style={{ color: T.red, padding: 12, marginBottom: 12, fontSize: 13 }}>⚠ {error}</div>}
