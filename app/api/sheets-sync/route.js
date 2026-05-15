@@ -17,8 +17,11 @@ function b64url(str) {
 }
 
 async function getAccessToken() {
-  const rawKey = Buffer.from(process.env.GOOGLE_PRIVATE_KEY_B64 || '', 'base64').toString('utf-8')
+  const b64 = process.env.GOOGLE_PRIVATE_KEY_B64
+  if (!b64) throw new Error('GOOGLE_PRIVATE_KEY_B64 env var is not set')
+  const rawKey = Buffer.from(b64, 'base64').toString('utf-8').replace(/\\n/g, '\n')
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
+  if (!email) throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL env var is not set')
   const now = Math.floor(Date.now() / 1000)
 
   const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
