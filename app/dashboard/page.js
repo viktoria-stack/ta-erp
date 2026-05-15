@@ -11,14 +11,16 @@ async function loadDashboard() {
     { data: shipments },
     { data: suppliers },
     { data: invStats },
+    { data: invoices },
   ] = await Promise.all([
     supabase.from('purchase_orders').select('id, supplier_name, total_cost_value, currency, ex_factory_date, po_splits_confirmed, created_at'),
     supabase.from('shipments').select('id, po_id, dc, status, units, eta, freight_forwarder, shipment_ref, tracking_number'),
     supabase.from('suppliers').select('id, name, code, status'),
     supabase.from('inventory').select('qty_uk, qty_us').limit(5000),
+    supabase.from('invoices').select('id, invoice_number, supplier_name, currency, deposit_amount, deposit_due_date, deposit_paid_date, balance_amount, balance_due_date, balance_paid_date'),
   ])
 
-  return { pos: pos || [], shipments: shipments || [], suppliers: suppliers || [], invStats: invStats || [] }
+  return { pos: pos || [], shipments: shipments || [], suppliers: suppliers || [], invStats: invStats || [], invoices: invoices || [] }
 }
 
 const statusColor = (s) => ({
@@ -91,7 +93,25 @@ export default function DashboardPage() {
   if (loading) return <Shell title="Dashboard"><Loading /></Shell>
   if (!data) return null
 
-  const { pos, shipments, suppliers, invStats } = data
+  const { pos, shipments, suppliers, invStats, invoices } = data
+
+  // ── Payment alerts
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const in14Str = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10)
+  const overduePayments = []
+  const upcomingPayments = []
+  for (const inv of invoices) {
+    if (inv.deposit_amount > 0 && !inv.deposit_paid_date) {
+      const entry = { id: inv.id, supplier: inv.supplier_name, invoice: inv.invoice_number, type: 'Deposit', amount: inv.deposit_amount, currency: inv.currency, due: inv.deposit_due_date }
+      if (inv.deposit_due_date && inv.deposit_due_date < todayStr) overduePayments.push(entry)
+      else if (inv.deposit_due_date && inv.deposit_due_date <= in14Str) upcomingPayments.push(entry)
+    }
+    if (inv.balance_amount > 0 && !inv.balance_paid_date) {
+      const entry = { id: inv.id, supplier: inv.supplier_name, invoice: inv.invoice_number, type: 'Balance', amount: inv.balance_amount, currency: inv.currency, due: inv.balance_due_date }
+      if (inv.balance_due_date && inv.balance_due_date < todayStr) overduePayments.push(entry)
+      else if (inv.balance_due_date && inv.balance_due_date <= in14Str) upcomingPayments.push(entry)
+    }
+  }
 
   // ── PO stats
   const unsplitPOs = pos.filter(p => !p.po_splits_confirmed)
@@ -175,6 +195,30 @@ export default function DashboardPage() {
       </div>
 
       {/* ── ALERT banners ── */}
+      {overduePayments.length > 0 && (
+        <div onClick={() => router.push('/invoices')} style={{ background: '#ef444410', border: '1px solid #ef444430', borderRadius: 8, padding: '12px 16px', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: 13, color: '#ef4444', fontWeight: 700 }}>🔴 {overduePayments.length} payment{overduePayments.length > 1 ? 's' : ''} overdue</span>
+            <span style={{ fontSize: 11, color: '#ef444499' }}>
+              {overduePayments.slice(0, 3).map(p => `${p.supplier} — ${p.type} ${fmt(p.amount, p.currency)} (due ${p.due})`).join('  ·  ')}{overduePayments.length > 3 ? `  · +${overduePayments.length - 3} more` : ''}
+            </span>
+          </div>
+          <span style={{ fontSize: 12, color: '#ef4444', whiteSpace: 'nowrap', marginLeft: 16 }}>Go to Invoices →</span>
+        </div>
+      )}
+
+      {upcomingPayments.length > 0 && (
+        <div onClick={() => router.push('/invoices')} style={{ background: '#f59e0b10', border: '1px solid #f59e0b30', borderRadius: 8, padding: '12px 16px', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: 13, color: T.yellow, fontWeight: 700 }}>⚠ {upcomingPayments.length} payment{upcomingPayments.length > 1 ? 's' : ''} due in the next 14 days</span>
+            <span style={{ fontSize: 11, color: '#f59e0b99' }}>
+              {upcomingPayments.slice(0, 3).map(p => `${p.supplier} — ${p.type} ${fmt(p.amount, p.currency)} (due ${p.due})`).join('  ·  ')}{upcomingPayments.length > 3 ? `  · +${upcomingPayments.length - 3} more` : ''}
+            </span>
+          </div>
+          <span style={{ fontSize: 12, color: T.yellow, whiteSpace: 'nowrap', marginLeft: 16 }}>Go to Invoices →</span>
+        </div>
+      )}
+
       {unsplitPOs.length > 0 && (
         <div onClick={() => router.push('/purchase-orders')} style={{ background: '#f59e0b10', border: '1px solid #f59e0b30', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
           <span style={{ fontSize: 13, color: T.yellow, fontWeight: 600 }}>⚠ {unsplitPOs.length} PO{unsplitPOs.length > 1 ? 's' : ''} waiting to be split into shipments</span>
