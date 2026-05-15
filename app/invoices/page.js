@@ -341,6 +341,7 @@ export default function InvoicesPage() {
   const [tab, setTab] = useState('invoices')
   const [showAdd, setShowAdd] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [pdfViewer, setPdfViewer] = useState(null)
   const [statusFilter, setStatusFilter] = useState('All')
   const [search, setSearch] = useState('')
 
@@ -377,6 +378,19 @@ export default function InvoicesPage() {
       {showAdd && <AddModal pos={pos} onClose={() => setShowAdd(false)} onSaved={load} />}
       {selected && <EditModal invoice={selected} pos={pos} onClose={() => setSelected(null)} onSaved={load} />}
 
+      {pdfViewer && (
+        <div style={{ position: 'fixed', inset: 0, background: '#000000d0', zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', background: T.surface, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+            <span style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: 16 }}>📄 Invoice PDF</span>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <a href={pdfViewer} target="_blank" rel="noopener" style={{ color: T.accent, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Open in new tab ↗</a>
+              <button onClick={() => setPdfViewer(null)} style={{ background: 'none', border: 'none', color: T.muted, fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+            </div>
+          </div>
+          <iframe src={pdfViewer} style={{ flex: 1, border: 'none', width: '100%' }} title="Invoice PDF" />
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
         <KPI label="Outstanding" value={fmt(outstanding)} color={outstanding > 0 ? '#ef4444' : T.text} />
         <KPI label="Deposits Due" value={fmt(depositDue)} color="#f59e0b" />
@@ -411,7 +425,7 @@ export default function InvoicesPage() {
                 <Th>Invoice #</Th><Th>Supplier</Th><Th>PO</Th><Th>Date</Th>
                 <Th>Deposit</Th><Th>Dep. Due</Th>
                 <Th>Balance</Th><Th>Bal. Due</Th>
-                <Th>Total</Th><Th>Status</Th>
+                <Th>Total</Th><Th>Status</Th><Th>PDF</Th>
               </tr></thead>
               <tbody>
                 {filtered.map(inv => {
@@ -434,6 +448,11 @@ export default function InvoicesPage() {
                       <Td style={{ fontSize: 12, color: balOD ? '#ef4444' : T.muted }}>{inv.balance_due_date || '—'}</Td>
                       <Td style={{ fontWeight: 700 }}>{fmt((inv.deposit_amount || 0) + (inv.balance_amount || 0), inv.currency)}</Td>
                       <Td><span style={{ background: sc.bg, color: sc.color, border: `1px solid ${sc.color}40`, borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{sc.label}</span></Td>
+                      <Td onClick={e => { if (inv.pdf_url) { e.stopPropagation(); setPdfViewer(inv.pdf_url) } }}>
+                        {inv.pdf_url
+                          ? <span style={{ color: T.accent, fontSize: 16, cursor: 'pointer' }} title="View PDF">📄</span>
+                          : <span style={{ color: T.border, fontSize: 13 }}>—</span>}
+                      </Td>
                     </tr>
                   )
                 })}

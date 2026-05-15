@@ -122,6 +122,7 @@ export default function DashboardPage() {
   const inTransit = shipments.filter(s => s.status?.includes('transit'))
   const receipt = shipments.filter(s => s.status === 'Receipt in progress')
   const bookedIn = shipments.filter(s => s.status?.includes('Booked in') || s.status?.includes('booked in'))
+  const missingETA = inTransit.filter(s => !s.eta)
 
   // ── Incoming shipments — ETA in next 60 days
   const now = new Date()
@@ -220,9 +221,19 @@ export default function DashboardPage() {
       )}
 
       {unsplitPOs.length > 0 && (
-        <div onClick={() => router.push('/purchase-orders')} style={{ background: '#f59e0b10', border: '1px solid #f59e0b30', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+        <div onClick={() => router.push('/purchase-orders')} style={{ background: '#f59e0b10', border: '1px solid #f59e0b30', borderRadius: 8, padding: '12px 16px', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
           <span style={{ fontSize: 13, color: T.yellow, fontWeight: 600 }}>⚠ {unsplitPOs.length} PO{unsplitPOs.length > 1 ? 's' : ''} waiting to be split into shipments</span>
           <span style={{ fontSize: 12, color: T.yellow }}>Go to Purchase Orders →</span>
+        </div>
+      )}
+
+      {missingETA.length > 0 && (
+        <div onClick={() => router.push('/purchase-orders')} style={{ background: '#3b82f610', border: '1px solid #3b82f630', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: 13, color: '#3b82f6', fontWeight: 700 }}>📋 {missingETA.length} shipment{missingETA.length > 1 ? 's' : ''} in transit with no ETA</span>
+            <span style={{ fontSize: 11, color: '#3b82f699' }}>{missingETA.slice(0, 3).map(s => s.shipment_ref).join('  ·  ')}{missingETA.length > 3 ? `  · +${missingETA.length - 3} more` : ''}</span>
+          </div>
+          <span style={{ fontSize: 12, color: '#3b82f6', whiteSpace: 'nowrap', marginLeft: 16 }}>Go to Purchase Orders →</span>
         </div>
       )}
 
