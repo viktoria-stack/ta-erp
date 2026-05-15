@@ -17,9 +17,15 @@ function b64url(str) {
 }
 
 async function getAccessToken() {
-  const b64 = process.env.GOOGLE_PRIVATE_KEY_B64
-  if (!b64) throw new Error('GOOGLE_PRIVATE_KEY_B64 env var is not set')
-  const rawKey = Buffer.from(b64, 'base64').toString('utf-8').replace(/\\n/g, '\n')
+  let rawKey
+  if (process.env.GOOGLE_PRIVATE_KEY_B64) {
+    rawKey = Buffer.from(process.env.GOOGLE_PRIVATE_KEY_B64, 'base64').toString('utf-8')
+  } else if (process.env.GOOGLE_PRIVATE_KEY) {
+    rawKey = process.env.GOOGLE_PRIVATE_KEY
+  } else {
+    throw new Error('Neither GOOGLE_PRIVATE_KEY nor GOOGLE_PRIVATE_KEY_B64 is set')
+  }
+  rawKey = rawKey.replace(/\\n/g, '\n').replace(/\r/g, '')
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
   if (!email) throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL env var is not set')
   const now = Math.floor(Date.now() / 1000)
