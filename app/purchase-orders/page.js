@@ -887,7 +887,6 @@ export default function PurchaseOrdersPage() {
       'Supplier': sh.po?.supplier_name || sh.po?.supplier_ref,
       'DC': sh.dc,
       'Status': sh.status,
-      'Ex-Factory': sh.po?.ex_factory_date || '',
       'ETA': sh.eta || '',
       'Freight Forwarder': sh.freight_forwarder || '',
       'Units': sh.units || 0,
@@ -1016,7 +1015,7 @@ export default function PurchaseOrdersPage() {
                 <tr style={{ background:T.surface }}>
                   <Th style={{ width:32 }}><input type="checkbox" checked={checkedIds.size===filteredShipments.length&&filteredShipments.length>0} onChange={toggleAll} /></Th>
                   <Th>Shipment Ref</Th><Th>Supplier</Th><Th>DC</Th>
-                  <Th>Status</Th><Th>Ex-Factory</Th><Th>ETA</Th>
+                  <Th>Status</Th><Th>ETA</Th>
                   <Th>Freight Forwarder</Th>
                   <Th style={{ textAlign:'right' }}>Units</Th>
                   <Th>Tracking #</Th>
@@ -1031,7 +1030,6 @@ export default function PurchaseOrdersPage() {
                     <Td style={{ fontWeight:600, fontSize:13 }}>{sh.po?.supplier_name||sh.po?.supplier_ref}</Td>
                     <Td><DCBadge dc={sh.dc} /></Td>
                     <Td><span style={{ color:shipStatusColor(sh.status), fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>{STATUS_SHORT[sh.status]||sh.status}</span></Td>
-                    <Td style={{ color:T.muted, fontSize:12, whiteSpace:'nowrap' }}>{fmtDate(sh.po?.ex_factory_date)}</Td>
                     <Td style={{ color:T.muted, fontSize:12, whiteSpace:'nowrap' }}>{fmtDate(sh.eta)}</Td>
                     <Td style={{ color:T.muted, fontSize:12 }}>{sh.freight_forwarder||'—'}</Td>
                     <Td style={{ textAlign:'right', fontWeight:700 }}>{(sh.units||0).toLocaleString()}</Td>
