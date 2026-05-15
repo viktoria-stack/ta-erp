@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Shell from '@/components/Shell'
 import { T, Card, Th, Td, BtnPrimary, BtnGhost, Modal, Loading, ErrorMsg } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
@@ -155,6 +156,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
 
 // ─── MAIN PAGE ────────────────────────────────────────────────
 export default function SuppliersPage() {
+  const router = useRouter()
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -241,7 +243,7 @@ export default function SuppliersPage() {
             </thead>
             <tbody>
               {filtered.map(s => (
-                <tr key={s.id} className="row-hover" onClick={() => setEditing(s)} style={{ cursor: 'pointer' }}>
+                <tr key={s.id} className="row-hover" onClick={() => router.push(`/suppliers/${s.id}`)} style={{ cursor: 'pointer' }}>
                   <Td>
                     <span style={{ background: T.accent + '20', color: T.accent, border: `1px solid ${T.accent}40`, borderRadius: 4, padding: '2px 10px', fontSize: 12, fontWeight: 800, fontFamily: 'monospace' }}>
                       {s.code || '—'}
