@@ -747,6 +747,9 @@ export default function PurchaseOrdersPage() {
   const [bulkSaving, setBulkSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
+  const [lastSyncTime, setLastSyncTime] = useState(null)
+  const [, setTick] = useState(0)
+  const autoSyncRan = useRef(false)
 
   const load = () => {
     setLoading(true)
@@ -756,7 +759,14 @@ export default function PurchaseOrdersPage() {
       .finally(()=>setLoading(false))
   }
 
-  useEffect(()=>{ load() },[])
+  useEffect(()=>{
+    load()
+    const stored = localStorage.getItem('ta_erp_last_sync')
+    const ts = stored ? parseInt(stored) : null
+    setLastSyncTime(ts)
+    const tick = setInterval(() => setTick(n => n + 1), 60000)
+    return () => clearInterval(tick)
+  },[])
 
   const allShipments = pos.flatMap(po=>(po.shipments||[]).map(sh=>({...sh,po})))
   const unsplitPOs = pos.filter(po=>!(po.shipments?.length>0) && !po.po_splits_confirmed)
@@ -775,27 +785,42 @@ export default function PurchaseOrdersPage() {
     return matchSearch && matchStatus
   })
 
-  const doSheetsSync = async () => {
-    setSyncing(true)
-    setSyncResult(null)
+  const markSynced = () => {
+    const now = Date.now()
+    localStorage.setItem('ta_erp_last_sync', now.toString())
+    setLastSyncTime(now)
+  }
+
+  const doSheetsSync = async (auto = false) => {
+    if (!auto) { setSyncing(true); setSyncResult(null) }
     try {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 25000)
       const res = await fetch('/api/sheets-sync', { method: 'POST', signal: controller.signal })
       clearTimeout(timeout)
       const data = await res.json()
-      setSyncResult(data)
-      if (!data.error) load()
+      if (!auto) setSyncResult(data)
+      if (!data.error) { markSynced(); load() }
     } catch (e) {
       if (e.name === 'AbortError') {
-        setSyncResult({ timeout: true })
+        markSynced()
+        if (!auto) setSyncResult({ timeout: true })
         load()
       } else {
-        setSyncResult({ error: e.message })
+        if (!auto) setSyncResult({ error: e.message })
       }
     }
-    setSyncing(false)
+    if (!auto) setSyncing(false)
   }
+
+  useEffect(() => {
+    if (autoSyncRan.current) return
+    autoSyncRan.current = true
+    const stored = localStorage.getItem('ta_erp_last_sync')
+    const ts = stored ? parseInt(stored) : null
+    const AGE = 60 * 60 * 1000
+    if (!ts || Date.now() - ts > AGE) doSheetsSync(true)
+  }, [])
 
   const toggleCheck = (id) => setCheckedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toggleAll = () => setCheckedIds(checkedIds.size === filteredShipments.length ? new Set() : new Set(filteredShipments.map(s => s.id)))
@@ -892,9 +917,16 @@ export default function PurchaseOrdersPage() {
           <input placeholder="Search PO / supplier…" value={search} onChange={e=>setSearch(e.target.value)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, padding:'7px 12px', color:T.text, fontSize:13, width:220, outline:'none' }} />
           {view==='shipments' && <BtnGhost onClick={exportExcel}>⬇ Export Excel</BtnGhost>}
           <BtnGhost onClick={()=>setShowImport(true)}>⬆ Import Excel</BtnGhost>
-          <BtnGhost onClick={doSheetsSync} disabled={syncing} style={{ color: syncing ? T.muted : '#34d399', borderColor: '#34d39940' }}>
-            {syncing ? 'Syncing…' : '⟳ Sync Google Sheets'}
-          </BtnGhost>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
+            <BtnGhost onClick={()=>doSheetsSync(false)} disabled={syncing} style={{ color: syncing ? T.muted : '#34d399', borderColor: '#34d39940' }}>
+              {syncing ? 'Syncing…' : '⟳ Sync Google Sheets'}
+            </BtnGhost>
+            {lastSyncTime && !syncing && (
+              <span style={{ fontSize:10, color:T.muted }}>
+                Last synced: {(() => { const m = Math.floor((Date.now()-lastSyncTime)/60000); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.floor(m/60)}h ago` })()}
+              </span>
+            )}
+          </div>
           <BtnPrimary onClick={()=>setShowNew(true)}>+ New PO</BtnPrimary>
         </div>
       </div>
