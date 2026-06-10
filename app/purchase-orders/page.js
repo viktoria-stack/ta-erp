@@ -7,7 +7,14 @@ import { supabase, getPurchaseOrders, getSuppliers, createPurchaseOrder, updateP
 import PackingListPanel from '@/components/PackingListPanel'
 
 // PO STATUS HELPERS
-const getPoStatus = (po) => { const s=po.shipments||[]; if(s.length===0) return 'In production'; if(s.every(x=>x.status&&(x.status.includes('Booked in')||x.status.includes('Delivered')))) return 'Completed'; if(s.some(x=>x.status&&x.status.includes('Receipt'))) return 'Receipt in progress'; return 'In transit' }
+const getPoStatus = (po) => {
+  const s = po.shipments || []
+  if (s.length === 0) return 'In production'
+  if (s.every(x => !x.status || x.status === 'In production')) return 'In production'
+  if (s.every(x => x.status && (x.status.includes('Booked in') || x.status.includes('Delivered')))) return 'Completed'
+  if (s.some(x => x.status && x.status.includes('Receipt'))) return 'Receipt in progress'
+  return 'In transit'
+}
 const PO_STATUS_CFG = {'In production':{color:'#f59e0b',bg:'#f59e0b20'},'In transit':{color:'#3b82f6',bg:'#3b82f620'},'Receipt in progress':{color:'#f97316',bg:'#f9731620'},'Completed':{color:'#22c55e',bg:'#22c55e20'}}
 
 // ─── CONSTANTS ────────────────────────────────────────────────
@@ -825,11 +832,9 @@ export default function PurchaseOrdersPage() {
     return matchDC && matchStatus && matchSearch
   })
 
-  const [poStatusFilter, setPoStatusFilter] = useState('All')
   const filteredPOs = pos.filter(po => {
     const matchSearch = !search || po.id.toLowerCase().includes(search.toLowerCase()) || (po.supplier_name||'').toLowerCase().includes(search.toLowerCase())
-    const matchStatus = poStatusFilter === 'All' || getPoStatus(po) === poStatusFilter
-    return matchSearch && matchStatus
+    return matchSearch && getPoStatus(po) === 'In production'
   })
 
   const markSynced = () => {
@@ -905,7 +910,7 @@ export default function PurchaseOrdersPage() {
     XLSX.writeFile(wb, `shipments-export-${new Date().toISOString().slice(0,10)}.xlsx`)
   }
 
-  const inProduction = pos.filter(po=>(po.shipments||[]).length===0).length
+  const inProduction = pos.filter(po => getPoStatus(po) === 'In production').length
   const inTransit = allShipments.filter(s=>s.status?.includes('transit')).length
   const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in')||s.status?.includes('Delivered')).length
 
@@ -942,7 +947,7 @@ export default function PurchaseOrdersPage() {
         <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
           {/* View toggle */}
           <div style={{ display:'flex', border:`1px solid ${T.border}`, borderRadius:5, overflow:'hidden', marginRight:8 }}>
-            {[{id:'shipments',label:'Shipments'},{id:'pos',label:'All POs'}].map(v=>(
+            {[{id:'shipments',label:'Shipments'},{id:'pos',label:'POs in Production'}].map(v=>(
               <button key={v.id} onClick={()=>setView(v.id)} style={{ background:view===v.id?T.accent:'transparent', color:view===v.id?'#fff':T.muted, border:'none', padding:'5px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>{v.label}</button>
             ))}
           </div>
@@ -1064,7 +1069,7 @@ export default function PurchaseOrdersPage() {
           </div>
         </Card>
       ) : (
-        // ── ALL POs TABLE ──
+        // ── POs IN PRODUCTION TABLE ──
         <Card>
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
