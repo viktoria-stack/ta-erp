@@ -7,9 +7,19 @@ import { supabase, getPurchaseOrders, getSuppliers, createPurchaseOrder, updateP
 import PackingListPanel from '@/components/PackingListPanel'
 
 // PO STATUS HELPERS
+const sheetStatusToPoStatus = (ss) => {
+  if (!ss) return null
+  const s = ss.toLowerCase()
+  if (s.includes('delivered') || s.includes('booked in') || s.includes('booked-in')) return 'Completed'
+  if (s.includes('receipt')) return 'Receipt in progress'
+  if (s.includes('transit') || s.includes('shipped')) return 'In transit'
+  if (s.includes('production')) return 'In production'
+  return null
+}
+
 const getPoStatus = (po) => {
   const s = po.shipments || []
-  if (s.length === 0) return 'In production'
+  if (s.length === 0) return sheetStatusToPoStatus(po.sheet_status) || 'In production'
   if (s.every(x => !x.status || x.status === 'In production')) return 'In production'
   if (s.every(x => x.status && (x.status.includes('Booked in') || x.status.includes('Delivered')))) return 'Completed'
   if (s.some(x => x.status && x.status.includes('Receipt'))) return 'Receipt in progress'

@@ -174,6 +174,8 @@ export async function POST() {
       const dcColVal = g(row, '^dc$')
       const dc = dcFromRef || dcColVal || null
 
+      const rowStatus = g(row, 'po.?status|^status$')
+
       if (!poMap[base]) {
         poMap[base] = {
           po: {
@@ -190,6 +192,7 @@ export async function POST() {
             barcodes_sent: cleanBool(g(row, 'barcode')),
             polybags_sent: cleanBool(g(row, 'poly')),
             po_splits_confirmed: cleanBool(g(row, 'po.?splits')) || hasSuffix,
+            sheet_status: rowStatus || null,
           },
           shipments: [],
         }
@@ -204,6 +207,7 @@ export async function POST() {
         if (!po.deposit_cost_value)   po.deposit_cost_value   = cleanNum(g(row, 'deposit.?cost'))
         if (!po.deposit_payment_date) po.deposit_payment_date = cleanDate(g(row, 'deposit.?pay'))
         if (!po.po_splits_confirmed)  po.po_splits_confirmed  = cleanBool(g(row, 'po.?splits')) || hasSuffix
+        if (!po.sheet_status && rowStatus) po.sheet_status    = rowStatus
       }
 
       if (hasSuffix && dc) {
