@@ -1,5 +1,6 @@
 export const runtime = 'nodejs'
 
+import { createSign, createPrivateKey } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
@@ -25,20 +26,28 @@ async function getAccessToken() {
     throw new Error('Neither GOOGLE_PRIVATE_KEY nor GOOGLE_PRIVATE_KEY_B64 is set')
   }
 
-  // Normalize: replace literal \n with real newlines, strip \r
-  rawKey = rawKey.replace(/\\n/g, '\n').replace(/\r/g, '').trim()
+  // Normalize newlines and strip surrounding whitespace/quotes
+  rawKey = rawKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  rawKey = rawKey.replace(/^["']|["']$/g, '').trim()
 
-  // Extract raw base64 from PEM and import via WebCrypto (avoids OpenSSL decoder issues)
-  const pemBody = rawKey.replace(/-----[^-]+-----/g, '').replace(/\s/g, '')
-  const der = Buffer.from(pemBody, 'base64')
+  // Extract pure base64 body line by line (skip PEM header/footer lines)
+  const b64 = rawKey.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('-----')).join('')
 
-  const cryptoKey = await globalThis.crypto.subtle.importKey(
-    'pkcs8',
-    der,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
+  if (!b64) {
+    const preview = rawKey.slice(0, 60).replace(/\n/g, '\\n')
+    throw new Error(`Could not extract key body. Key preview: "${preview}"`)
+  }
+
+  const der = Buffer.from(b64, 'base64')
+
+  // Use node:crypto with explicit DER+pkcs8 — bypasses the PEM decoder entirely
+  let privateKey
+  try {
+    privateKey = createPrivateKey({ key: der, format: 'der', type: 'pkcs8' })
+  } catch (err) {
+    const preview = rawKey.slice(0, 60).replace(/\n/g, '\\n')
+    throw new Error(`Key load failed (${der.length}B DER): ${err.message}. Preview: "${preview}"`)
+  }
 
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
   if (!email) throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL env var is not set')
@@ -53,12 +62,10 @@ async function getAccessToken() {
   }))
 
   const signingInput = `${header}.${payload}`
-  const sigBuf = await globalThis.crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    cryptoKey,
-    Buffer.from(signingInput)
-  )
-  const signature = b64url(Buffer.from(sigBuf))
+  const signer = createSign('RSA-SHA256')
+  signer.update(signingInput)
+  const signature = signer.sign(privateKey, 'base64')
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
 
   const jwt = `${signingInput}.${signature}`
 
