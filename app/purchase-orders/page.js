@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import Shell from '@/components/Shell'
 import { T, KPI, Card, Badge, Th, Td, Input, BtnPrimary, BtnGhost, Modal, CURRENCIES, fmt, Loading, ErrorMsg } from '@/components/ui'
-import { getPurchaseOrders, getSuppliers, createPurchaseOrder, updatePurchaseOrder, updateShipment, addShipment, getPoLines } from '@/lib/supabase'
+import { supabase, getPurchaseOrders, getSuppliers, createPurchaseOrder, updatePurchaseOrder, updateShipment, addShipment, getPoLines } from '@/lib/supabase'
 import PackingListPanel from '@/components/PackingListPanel'
 
 // PO STATUS HELPERS
@@ -980,14 +980,21 @@ export default function PurchaseOrdersPage() {
       {error && <ErrorMsg msg={error} />}
 
       {syncResult && (
-        <div style={{ background: syncResult.error ? '#ef444415' : '#22c55e15', border: `1px solid ${syncResult.error ? '#ef444440' : '#22c55e40'}`, borderRadius:8, padding:'10px 16px', marginBottom:12, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          {syncResult.error
-            ? <span style={{ fontSize:13, color:'#ef4444' }}>⚠ Sync failed: {syncResult.error}</span>
-            : syncResult.timeout
-            ? <span style={{ fontSize:13, color:'#22c55e' }}>✓ Sync completed successfully</span>
-            : <span style={{ fontSize:13, color:'#22c55e' }}>✓ Synced {syncResult.upsertedPOs} POs and {syncResult.upsertedShipments} shipments from Google Sheets{syncResult.errors?.length > 0 ? ` (${syncResult.errors.length} errors)` : ''}</span>
-          }
-          <button onClick={()=>setSyncResult(null)} style={{ background:'none', border:'none', color:T.muted, cursor:'pointer', fontSize:16 }}>×</button>
+        <div style={{ background: syncResult.error ? '#ef444415' : '#22c55e15', border: `1px solid ${syncResult.error ? '#ef444440' : '#22c55e40'}`, borderRadius:8, padding:'10px 16px', marginBottom:12 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            {syncResult.error
+              ? <span style={{ fontSize:13, color:'#ef4444' }}>⚠ Sync failed: {syncResult.error}</span>
+              : syncResult.timeout
+              ? <span style={{ fontSize:13, color:'#22c55e' }}>✓ Sync completed successfully</span>
+              : <span style={{ fontSize:13, color:'#22c55e' }}>✓ Synced {syncResult.upsertedPOs} POs and {syncResult.upsertedShipments} shipments from Google Sheets{syncResult.errors?.length > 0 ? <span style={{ color:'#f59e0b' }}> ({syncResult.errors.length} errors)</span> : ''}</span>
+            }
+            <button onClick={()=>setSyncResult(null)} style={{ background:'none', border:'none', color:T.muted, cursor:'pointer', fontSize:16 }}>×</button>
+          </div>
+          {syncResult.errors?.length > 0 && (
+            <div style={{ marginTop:8, fontSize:11, color:'#f59e0b', background:'#f59e0b10', borderRadius:4, padding:'6px 10px' }}>
+              {syncResult.errors.map((e,i) => <div key={i}>• {e}</div>)}
+            </div>
+          )}
         </div>
       )}
 

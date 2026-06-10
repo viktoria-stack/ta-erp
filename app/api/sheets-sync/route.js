@@ -1,6 +1,5 @@
 export const runtime = 'nodejs'
 
-import { createSign, createPrivateKey } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
@@ -12,8 +11,8 @@ const getSupabase = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 )
 
-function b64url(str) {
-  return Buffer.from(str).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+function b64url(buf) {
+  return Buffer.from(buf).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
 }
 
 async function getAccessToken() {
@@ -25,7 +24,22 @@ async function getAccessToken() {
   } else {
     throw new Error('Neither GOOGLE_PRIVATE_KEY nor GOOGLE_PRIVATE_KEY_B64 is set')
   }
-  rawKey = rawKey.replace(/\\n/g, '\n').replace(/\r/g, '')
+
+  // Normalize: replace literal \n with real newlines, strip \r
+  rawKey = rawKey.replace(/\\n/g, '\n').replace(/\r/g, '').trim()
+
+  // Extract raw base64 from PEM and import via WebCrypto (avoids OpenSSL decoder issues)
+  const pemBody = rawKey.replace(/-----[^-]+-----/g, '').replace(/\s/g, '')
+  const der = Buffer.from(pemBody, 'base64')
+
+  const cryptoKey = await globalThis.crypto.subtle.importKey(
+    'pkcs8',
+    der,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
   if (!email) throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL env var is not set')
   const now = Math.floor(Date.now() / 1000)
@@ -39,11 +53,12 @@ async function getAccessToken() {
   }))
 
   const signingInput = `${header}.${payload}`
-  const privateKey = createPrivateKey(rawKey)
-  const signer = createSign('RSA-SHA256')
-  signer.update(signingInput)
-  const signature = signer.sign(privateKey, 'base64')
-    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+  const sigBuf = await globalThis.crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    Buffer.from(signingInput)
+  )
+  const signature = b64url(Buffer.from(sigBuf))
 
   const jwt = `${signingInput}.${signature}`
 
