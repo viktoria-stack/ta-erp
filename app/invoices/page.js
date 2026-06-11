@@ -864,146 +864,186 @@ export default function InvoicesPage() {
       {pdfViewer && (
         <div style={{ position: 'fixed', inset: 0, background: '#000000d0', zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', background: T.surface, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-            <span style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: 16 }}>📄 Invoice PDF</span>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <span style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: 16, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Invoice PDF</span>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <a href={pdfViewer} target="_blank" rel="noopener" style={{ color: T.accent, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Open in new tab ↗</a>
-              <button onClick={() => setPdfViewer(null)} style={{ background: 'none', border: 'none', color: T.muted, fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+              <button onClick={() => setPdfViewer(null)} style={{ background: 'none', border: `1px solid ${T.border}`, color: T.muted, width: 28, height: 28, borderRadius: 6, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
             </div>
           </div>
           <iframe src={pdfViewer} style={{ flex: 1, border: 'none', width: '100%' }} title="Invoice PDF" />
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
-        <KPI label="Outstanding" value={fmt(outstanding)} color={outstanding > 0 ? '#ef4444' : T.text} />
-        <KPI label="Deposits Due" value={fmt(depositDue)} color="#f59e0b" />
-        <KPI label="Balances Due" value={fmt(balanceDue)} color="#3b82f6" />
-        <KPI label="⚠ Overdue" value={overdueCount} color={overdueCount > 0 ? '#ef4444' : T.muted} />
-        <KPI label="Total Invoices" value={invoices.length} />
+      {/* KPI row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 28 }}>
+        {[
+          { label: 'Total Outstanding', value: fmt(outstanding), color: outstanding > 0 ? T.red : T.text, accent: T.red },
+          { label: 'Deposits Unpaid', value: fmt(depositDue), color: T.yellow, accent: T.yellow },
+          { label: 'Balances Unpaid', value: fmt(balanceDue), color: T.blue, accent: T.blue },
+          { label: 'Overdue', value: overdueCount, color: overdueCount > 0 ? T.red : T.muted, accent: overdueCount > 0 ? T.red : T.border },
+          { label: 'Total Invoices', value: invoices.length, color: T.text, accent: T.border },
+        ].map(k => (
+          <div key={k.label} style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `2px solid ${k.accent}`, borderRadius: 8, padding: '14px 18px' }}>
+            <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 6 }}>{k.label}</div>
+            <div style={{ fontSize: 22, fontFamily: 'Barlow Condensed', fontWeight: 800, color: k.color, letterSpacing: '-0.01em' }}>{k.value}</div>
+          </div>
+        ))}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {[['invoices', '🧾 Invoices'], ['cashflow', '📊 Cash Flow']].map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? T.accent : T.subtle, color: tab === k ? '#fff' : T.muted, border: 'none', borderRadius: 6, padding: '7px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{label}</button>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: 3 }}>
+          {[['invoices', 'Invoices'], ['cashflow', 'Cash Flow']].map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} style={{
+              background: tab === k ? T.accent : 'transparent',
+              color: tab === k ? '#fff' : T.muted,
+              border: 'none', borderRadius: 5, padding: '6px 16px',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'background 0.15s, color 0.15s'
+            }}>{label}</button>
           ))}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setShowBulk(true)} style={{ background: T.subtle, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 18px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>⬇ Import from POs</button>
-          <button onClick={() => setShowUpload(true)} style={{ background: T.subtle, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 18px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>⬆ Upload Invoice</button>
-          <button onClick={() => setShowAdd(true)} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>+ Add Invoice</button>
+          <button onClick={() => setShowBulk(true)} style={{ background: T.subtle, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 14px', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>Import from POs</button>
+          <button onClick={() => setShowUpload(true)} style={{ background: T.subtle, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 14px', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>Upload PDF</button>
+          <button onClick={() => setShowAdd(true)} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>+ Add Invoice</button>
         </div>
       </div>
 
       {tab === 'cashflow' ? <CashflowView invoices={invoices} /> : (
         <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            {['All', 'unpaid', 'partial', 'paid'].map(s => (
-              <button key={s} onClick={() => setStatusFilter(s)} style={{ background: statusFilter === s ? T.accent : T.subtle, color: statusFilter === s ? '#fff' : T.muted, border: 'none', borderRadius: 4, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                {s === 'partial' ? 'Deposit Paid' : s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            ))}
-            <div style={{ width: 1, height: 20, background: T.border }} />
+          {/* Filters */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 3 }}>
+              {[
+                ['All', 'All'],
+                ['unpaid', 'Unpaid'],
+                ['partial', 'Dep. Paid'],
+                ['paid', 'Paid'],
+              ].map(([val, label]) => (
+                <button key={val} onClick={() => setStatusFilter(val)} style={{
+                  background: statusFilter === val ? T.accent : T.subtle,
+                  color: statusFilter === val ? '#fff' : T.muted,
+                  border: 'none', borderRadius: 4, padding: '5px 11px',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                  transition: 'background 0.15s, color 0.15s'
+                }}>{label}</button>
+              ))}
+            </div>
             <select value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}
-              style={{ ...inp, maxWidth: 200, cursor: 'pointer', color: supplierFilter !== 'All' ? T.accent : T.muted }}>
+              style={{ ...inp, width: 180, cursor: 'pointer', color: supplierFilter !== 'All' ? T.accent : T.muted }}>
               <option value="All">All Suppliers</option>
               {allSuppliers.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <input style={{ ...inp, maxWidth: 220 }} placeholder="Search invoice # or supplier…" value={search} onChange={e => setSearch(e.target.value)} />
+            <input style={{ ...inp, width: 200 }} placeholder="Search invoice # or supplier…" value={search} onChange={e => setSearch(e.target.value)} />
+            {(supplierFilter !== 'All' || search) && (
+              <button onClick={() => { setSupplierFilter('All'); setSearch('') }}
+                style={{ background: 'none', border: `1px solid ${T.border}`, color: T.muted, borderRadius: 4, padding: '5px 10px', fontSize: 11, cursor: 'pointer' }}>
+                Clear
+              </button>
+            )}
             <span style={{ marginLeft: 'auto', fontSize: 12, color: T.muted }}>{filtered.length} invoice{filtered.length !== 1 ? 's' : ''}</span>
           </div>
 
           {loading ? <Loading /> : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ background: T.surface }}>
-                <Th>Invoice #</Th><Th>Supplier</Th><Th>PO</Th><Th>Date</Th>
-                <Th>Deposit</Th><Th>Dep. Due</Th>
-                <Th>Balance</Th><Th>Bal. Due</Th>
-                <Th>Total</Th><Th>Status</Th><Th>PDF</Th>
-              </tr></thead>
-              <tbody>
-                {filtered.map(inv => {
-                  const sc = STATUS_CFG[invoiceStatus(inv)]
-                  const depOD = inv.deposit_amount > 0 && !inv.deposit_paid_date && inv.deposit_due_date && inv.deposit_due_date < t
-                  const balOD = inv.balance_amount > 0 && !inv.balance_paid_date && inv.balance_due_date && inv.balance_due_date < t
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: T.surface }}>
+                    <Th>Invoice #</Th>
+                    <Th>Supplier</Th>
+                    <Th>PO</Th>
+                    <Th>Date</Th>
+                    <Th>Deposit</Th>
+                    <Th>Balance</Th>
+                    <Th>Total</Th>
+                    <Th>Status</Th>
+                    <Th style={{ width: 40 }}>PDF</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(inv => {
+                    const sc = STATUS_CFG[invoiceStatus(inv)]
+                    const depOD = inv.deposit_amount > 0 && !inv.deposit_paid_date && inv.deposit_due_date && inv.deposit_due_date < t
+                    const balOD = inv.balance_amount > 0 && !inv.balance_paid_date && inv.balance_due_date && inv.balance_due_date < t
 
-                  const markPaid = async (e, field) => {
-                    e.stopPropagation()
-                    await supabase.from('invoices').update({ [field]: today() }).eq('id', inv.id)
-                    load()
-                  }
-                  const markUnpaid = async (e, field) => {
-                    e.stopPropagation()
-                    await supabase.from('invoices').update({ [field]: null }).eq('id', inv.id)
-                    load()
-                  }
+                    const markPaid = async (e, field) => {
+                      e.stopPropagation()
+                      await supabase.from('invoices').update({ [field]: today() }).eq('id', inv.id)
+                      load()
+                    }
+                    const markUnpaid = async (e, field) => {
+                      e.stopPropagation()
+                      await supabase.from('invoices').update({ [field]: null }).eq('id', inv.id)
+                      load()
+                    }
 
-                  return (
-                    <tr key={inv.id} onClick={() => setSelected(inv)} className="row-hover" style={{ borderBottom: `1px solid ${T.border}`, cursor: 'pointer' }}>
-                      <Td style={{ fontFamily: 'monospace', fontWeight: 700, color: T.accent }}>{inv.invoice_number}</Td>
-                      <Td style={{ fontWeight: 600 }}>{inv.supplier_name}</Td>
-                      <Td style={{ fontSize: 12, color: T.muted }}>{inv.po_id || '—'}</Td>
-                      <Td style={{ fontSize: 12, color: T.muted }}>{inv.invoice_date || '—'}</Td>
-
-                      {/* Deposit */}
-                      <Td onClick={e => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
-                        {inv.deposit_amount > 0 ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ color: inv.deposit_paid_date ? T.green : depOD ? '#ef4444' : T.text, fontWeight: 600 }}>
-                              {fmt(inv.deposit_amount, inv.currency)}
+                    const PaymentCell = ({ amount, dueDate, paidDate, isOverdue, paidField }) => {
+                      if (!amount || amount <= 0) return <span style={{ color: T.border }}>—</span>
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <span style={{ fontWeight: 700, fontSize: 13, color: paidDate ? T.green : isOverdue ? T.red : T.text }}>
+                            {fmt(amount, inv.currency)}
+                          </span>
+                          {dueDate && (
+                            <span style={{ fontSize: 11, color: isOverdue ? T.red : T.muted, fontWeight: isOverdue ? 600 : 400 }}>
+                              Due {dueDate}
                             </span>
-                            {inv.deposit_paid_date ? (
-                              <button onClick={e => markUnpaid(e, 'deposit_paid_date')} title={`Paid ${inv.deposit_paid_date} — click to undo`}
-                                style={{ background: T.greenDim, color: T.green, border: `1px solid ${T.green}40`, borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                ✓ {inv.deposit_paid_date}
-                              </button>
-                            ) : (
-                              <button onClick={e => markPaid(e, 'deposit_paid_date')}
-                                style={{ background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                Mark Paid
-                              </button>
-                            )}
-                          </div>
-                        ) : <span style={{ color: T.muted }}>—</span>}
-                      </Td>
-                      <Td style={{ fontSize: 12, color: depOD ? '#ef4444' : T.muted }}>{inv.deposit_due_date || '—'}</Td>
+                          )}
+                          {paidDate ? (
+                            <button onClick={e => markUnpaid(e, paidField)} title={`Paid ${paidDate} — click to undo`}
+                              style={{ background: '#22c55e18', color: T.green, border: `1px solid ${T.green}35`, borderRadius: 4, padding: '2px 7px', fontSize: 10, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', width: 'fit-content' }}>
+                              ✓ {paidDate}
+                            </button>
+                          ) : (
+                            <button onClick={e => markPaid(e, paidField)}
+                              style={{ background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 7px', fontSize: 10, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', width: 'fit-content', transition: 'border-color 0.15s, color 0.15s' }}
+                              onMouseEnter={e => { e.currentTarget.style.borderColor = T.green; e.currentTarget.style.color = T.green }}
+                              onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted }}>
+                              Mark Paid
+                            </button>
+                          )}
+                        </div>
+                      )
+                    }
 
-                      {/* Balance */}
-                      <Td onClick={e => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
-                        {inv.balance_amount > 0 ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ color: inv.balance_paid_date ? T.green : balOD ? '#ef4444' : T.text, fontWeight: 600 }}>
-                              {fmt(inv.balance_amount, inv.currency)}
-                            </span>
-                            {inv.balance_paid_date ? (
-                              <button onClick={e => markUnpaid(e, 'balance_paid_date')} title={`Paid ${inv.balance_paid_date} — click to undo`}
-                                style={{ background: T.greenDim, color: T.green, border: `1px solid ${T.green}40`, borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                ✓ {inv.balance_paid_date}
-                              </button>
-                            ) : (
-                              <button onClick={e => markPaid(e, 'balance_paid_date')}
-                                style={{ background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                Mark Paid
-                              </button>
-                            )}
-                          </div>
-                        ) : <span style={{ color: T.muted }}>—</span>}
-                      </Td>
-                      <Td style={{ fontSize: 12, color: balOD ? '#ef4444' : T.muted }}>{inv.balance_due_date || '—'}</Td>
-
-                      <Td style={{ fontWeight: 700 }}>{fmt((inv.deposit_amount || 0) + (inv.balance_amount || 0), inv.currency)}</Td>
-                      <Td><span style={{ background: sc.bg, color: sc.color, border: `1px solid ${sc.color}40`, borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{sc.label}</span></Td>
-                      <Td onClick={e => { if (inv.pdf_url) { e.stopPropagation(); setPdfViewer(inv.pdf_url) } }}>
-                        {inv.pdf_url
-                          ? <span style={{ color: T.accent, fontSize: 16, cursor: 'pointer' }} title="View PDF">📄</span>
-                          : <span style={{ color: T.border, fontSize: 13 }}>—</span>}
-                      </Td>
-                    </tr>
-                  )
-                })}
-                {filtered.length === 0 && <tr><td colSpan={11} style={{ padding: 32, textAlign: 'center', color: T.muted }}>No invoices found</td></tr>}
-              </tbody>
-            </table>
+                    return (
+                      <tr key={inv.id} onClick={() => setSelected(inv)} className="row-hover"
+                        style={{ borderBottom: `1px solid ${T.border}`, cursor: 'pointer' }}>
+                        <Td>
+                          <div style={{ fontFamily: 'monospace', fontWeight: 700, color: T.accent, fontSize: 13 }}>{inv.invoice_number}</div>
+                          <div style={{ fontSize: 11, color: T.muted, marginTop: 2, textTransform: 'capitalize' }}>{inv.invoice_type || 'supplier'}</div>
+                        </Td>
+                        <Td style={{ fontWeight: 600, fontSize: 13 }}>{inv.supplier_name}</Td>
+                        <Td style={{ fontSize: 12, color: T.muted, fontFamily: 'monospace' }}>{inv.po_id || '—'}</Td>
+                        <Td style={{ fontSize: 12, color: T.muted }}>{inv.invoice_date || '—'}</Td>
+                        <Td onClick={e => e.stopPropagation()} style={{ verticalAlign: 'top', paddingTop: 10, paddingBottom: 10 }}>
+                          <PaymentCell amount={inv.deposit_amount} dueDate={inv.deposit_due_date} paidDate={inv.deposit_paid_date} isOverdue={depOD} paidField="deposit_paid_date" />
+                        </Td>
+                        <Td onClick={e => e.stopPropagation()} style={{ verticalAlign: 'top', paddingTop: 10, paddingBottom: 10 }}>
+                          <PaymentCell amount={inv.balance_amount} dueDate={inv.balance_due_date} paidDate={inv.balance_paid_date} isOverdue={balOD} paidField="balance_paid_date" />
+                        </Td>
+                        <Td style={{ fontWeight: 700, fontSize: 13 }}>
+                          {fmt((inv.deposit_amount || 0) + (inv.balance_amount || 0), inv.currency)}
+                        </Td>
+                        <Td>
+                          <span style={{ background: sc.bg, color: sc.color, border: `1px solid ${sc.color}35`, borderRadius: 4, padding: '3px 9px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            {sc.label}
+                          </span>
+                        </Td>
+                        <Td onClick={e => { if (inv.pdf_url) { e.stopPropagation(); setPdfViewer(inv.pdf_url) } }} style={{ textAlign: 'center' }}>
+                          {inv.pdf_url
+                            ? <span style={{ color: T.accent, fontSize: 15, cursor: 'pointer' }} title="View PDF">📄</span>
+                            : <span style={{ color: T.border }}>—</span>}
+                        </Td>
+                      </tr>
+                    )
+                  })}
+                  {filtered.length === 0 && (
+                    <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: T.muted, fontSize: 13 }}>No invoices found</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}
