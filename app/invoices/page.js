@@ -460,6 +460,8 @@ function EditModal({ invoice, pos, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState(invoice.pdf_url || null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const save = async () => {
@@ -474,6 +476,7 @@ function EditModal({ invoice, pos, onClose, onSaved }) {
       balance_due_date: form.balance_due_date || null,
       balance_paid_date: form.balance_paid_date || null,
       po_id: form.po_id || null,
+      pdf_url: pdfUrl,
     }).eq('id', invoice.id)
     setSaving(false); onSaved(); onClose()
   }
@@ -484,10 +487,43 @@ function EditModal({ invoice, pos, onClose, onSaved }) {
     onSaved(); onClose()
   }
 
+  const uploadPdf = async (file) => {
+    if (!file) return
+    setUploading(true)
+    const path = `invoices/${Date.now()}_${file.name}`
+    const { error } = await supabase.storage.from('invoices').upload(path, file)
+    if (!error) {
+      const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(path)
+      setPdfUrl(publicUrl)
+    }
+    setUploading(false)
+  }
+
   return (
     <Modal title={`Invoice — ${invoice.invoice_number}`} onClose={onClose} wide>
       <InvoiceForm form={form} set={set} pos={pos} isEdit />
-      {invoice.pdf_url && <div style={{ marginTop: 8 }}><a href={invoice.pdf_url} target="_blank" rel="noopener" style={{ color: T.accent, fontSize: 13 }}>📄 View PDF</a></div>}
+      <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+        {pdfUrl ? (
+          <>
+            <a href={pdfUrl} target="_blank" rel="noopener"
+              style={{ color: T.accent, fontSize: 13, fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
+              📄 View PDF
+            </a>
+            <span style={{ color: T.border }}>·</span>
+            <label style={{ color: T.muted, fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}>
+              Replace
+              <input type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => uploadPdf(e.target.files[0])} />
+            </label>
+          </>
+        ) : (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7, color: T.muted, fontSize: 13, cursor: 'pointer',
+            background: T.subtle, border: `1px dashed ${T.border}`, borderRadius: 6, padding: '7px 14px' }}>
+            {uploading ? 'Uploading…' : '+ Attach PDF'}
+            <input type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => uploadPdf(e.target.files[0])} disabled={uploading} />
+          </label>
+        )}
+        {uploading && <span style={{ fontSize: 12, color: T.muted }}>Uploading…</span>}
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>
         <div>
           {!confirmDelete ? (
@@ -816,7 +852,6 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('invoices')
   const [showAdd, setShowAdd] = useState(false)
-  const [showUpload, setShowUpload] = useState(false)
   const [showBulk, setShowBulk] = useState(false)
   const [selected, setSelected] = useState(null)
   const [pdfViewer, setPdfViewer] = useState(null)
@@ -857,7 +892,6 @@ export default function InvoicesPage() {
   return (
     <Shell title="Invoices">
       {showAdd && <AddModal pos={pos} onClose={() => setShowAdd(false)} onSaved={load} />}
-      {showUpload && <UploadModal pos={pos} onClose={() => setShowUpload(false)} onSaved={load} />}
       {showBulk && <BulkImportModal onClose={() => setShowBulk(false)} onSaved={load} />}
       {selected && <EditModal invoice={selected} pos={pos} onClose={() => setSelected(null)} onSaved={load} />}
 
@@ -904,7 +938,6 @@ export default function InvoicesPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setShowBulk(true)} style={{ background: T.subtle, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 14px', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>Import from POs</button>
-          <button onClick={() => setShowUpload(true)} style={{ background: T.subtle, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 14px', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>Upload PDF</button>
           <button onClick={() => setShowAdd(true)} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>+ Add Invoice</button>
         </div>
       </div>
