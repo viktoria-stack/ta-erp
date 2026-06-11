@@ -41,18 +41,34 @@ async function getAccessToken() {
   return access_token
 }
 
+const shiftDate = (dateStr, days) => {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url)
-    const days = parseInt(searchParams.get('days') || '7')
-
     const propertyId = process.env.GA4_PROPERTY_ID
     if (!propertyId) throw new Error('GA4_PROPERTY_ID not set')
 
     const token = await getAccessToken()
 
-    const prevEnd   = `${days + 1}daysAgo`
-    const prevStart = `${days * 2}daysAgo`
+    let startDate, endDate
+    if (searchParams.get('startDate') && searchParams.get('endDate')) {
+      startDate = searchParams.get('startDate')
+      endDate   = searchParams.get('endDate')
+    } else {
+      const days = parseInt(searchParams.get('days') || '7')
+      const today = new Date().toISOString().slice(0, 10)
+      endDate   = today
+      startDate = shiftDate(today, -days)
+    }
+
+    const diffDays = Math.round((new Date(endDate) - new Date(startDate)) / 86400000)
+    const prevEnd   = shiftDate(startDate, -1)
+    const prevStart = shiftDate(prevEnd, -diffDays)
 
     const body = {
       dimensions: [
@@ -65,8 +81,8 @@ export async function GET(req) {
         { name: 'itemsViewed' },
       ],
       dateRanges: [
-        { startDate: `${days}daysAgo`, endDate: 'today', name: 'current' },
-        { startDate: prevStart,        endDate: prevEnd,  name: 'previous' },
+        { startDate, endDate,   name: 'current' },
+        { startDate: prevStart, endDate: prevEnd, name: 'previous' },
       ],
       orderBys: [{ metric: { metricName: 'itemRevenue' }, desc: true }],
       limit: 100,
@@ -119,7 +135,7 @@ export async function GET(req) {
       }))
       .sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
 
-    return NextResponse.json({ rows, days })
+    return NextResponse.json({ rows, startDate, endDate })
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

@@ -7,10 +7,14 @@ const fmtCcy = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency
 const fmtNum = n => Number(n || 0).toLocaleString('en-GB')
 
 const RANGES = [
-  { label: '7 days',  days: 7 },
-  { label: '30 days', days: 30 },
-  { label: '90 days', days: 90 },
+  { label: '7D',  days: 7 },
+  { label: '30D', days: 30 },
+  { label: '90D', days: 90 },
 ]
+
+const toDate = (d) => d.toISOString().slice(0, 10)
+const today  = () => toDate(new Date())
+const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return toDate(d) }
 
 const Delta = ({ cur, prev }) => {
   if (!prev || prev === 0) return null
@@ -33,8 +37,10 @@ export default function SalesPage() {
   const [rows, setRows]     = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]   = useState('')
-  const [days, setDays]     = useState(7)
-  const [customDays, setCustomDays] = useState('')
+  const [days, setDays]       = useState(7)
+  const [startDate, setStartDate] = useState(daysAgo(7))
+  const [endDate, setEndDate]     = useState(today())
+  const [isCustom, setIsCustom]   = useState(false)
   const [search, setSearch] = useState('')
   const [sortCol, setSortCol] = useState('revenue')
   const [sortAsc, setSortAsc] = useState(false)
@@ -42,7 +48,10 @@ export default function SalesPage() {
   useEffect(() => {
     setLoading(true)
     setError('')
-    fetch(`/api/sales-data?days=${days}`)
+    const url = isCustom
+      ? `/api/sales-data?startDate=${startDate}&endDate=${endDate}`
+      : `/api/sales-data?days=${days}`
+    fetch(url)
       .then(r => r.json())
       .then(data => {
         if (data.error) throw new Error(data.error)
@@ -50,7 +59,7 @@ export default function SalesPage() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [days])
+  }, [days, startDate, endDate, isCustom])
 
   const filtered = useMemo(() => {
     let r = rows
@@ -97,42 +106,31 @@ export default function SalesPage() {
           <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: 26, letterSpacing: '-0.3px', color: T.text }}>Sales Dashboard</div>
           <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Google Analytics 4 · Top products</div>
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: 3 }}>
             {RANGES.map(r => (
-              <button key={r.days} onClick={() => { setDays(r.days); setCustomDays('') }} style={{
-                background: days === r.days && !customDays ? T.accent : 'transparent',
-                color: days === r.days && !customDays ? '#fff' : T.muted,
-                border: 'none', borderRadius: 5, padding: '5px 14px',
+              <button key={r.days} onClick={() => { setDays(r.days); setIsCustom(false) }} style={{
+                background: !isCustom && days === r.days ? T.accent : 'transparent',
+                color: !isCustom && days === r.days ? '#fff' : T.muted,
+                border: 'none', borderRadius: 5, padding: '5px 12px',
                 fontSize: 12, fontWeight: 600, cursor: 'pointer',
                 transition: 'background 0.15s, color 0.15s',
               }}>{r.label}</button>
             ))}
           </div>
-          <form onSubmit={e => {
-            e.preventDefault()
-            const n = parseInt(customDays)
-            if (n > 0 && n <= 365) setDays(n)
-          }} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: T.surface, border: `1px solid ${isCustom ? T.accent : T.border}`, borderRadius: 7, padding: '3px 8px' }}>
             <input
-              type="number" min="1" max="365"
-              value={customDays}
-              onChange={e => setCustomDays(e.target.value)}
-              placeholder="Custom"
-              style={{
-                width: 80, background: customDays ? T.surface : 'transparent',
-                border: `1px solid ${customDays ? T.accent : T.border}`,
-                borderRadius: 6, padding: '5px 8px', color: T.text, fontSize: 12,
-                outline: 'none', textAlign: 'center',
-              }}
+              type="date" value={startDate}
+              onChange={e => { setStartDate(e.target.value); setIsCustom(true) }}
+              style={{ background: 'transparent', border: 'none', color: T.text, fontSize: 12, outline: 'none', cursor: 'pointer' }}
             />
-            {customDays && (
-              <button type="submit" style={{
-                background: T.accent, color: '#fff', border: 'none',
-                borderRadius: 5, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              }}>Go</button>
-            )}
-          </form>
+            <span style={{ color: T.muted, fontSize: 11 }}>→</span>
+            <input
+              type="date" value={endDate}
+              onChange={e => { setEndDate(e.target.value); setIsCustom(true) }}
+              style={{ background: 'transparent', border: 'none', color: T.text, fontSize: 12, outline: 'none', cursor: 'pointer' }}
+            />
+          </div>
         </div>
       </div>
 
