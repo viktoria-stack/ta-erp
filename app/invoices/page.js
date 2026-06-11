@@ -579,6 +579,11 @@ function BulkImportModal({ onClose, onSaved }) {
         const isTbc = /tbc/i.test(po.id) || /tbc/i.test(po.supplier_name || '')
         return !alreadyLinked && !isTbc && !s.includes('delivered') && !s.includes('booked in')
       })
+      const safeDate = (v) => {
+        if (!v || typeof v !== 'string') return ''
+        const d = new Date(v)
+        return isNaN(d.getTime()) ? '' : v.slice(0, 10)
+      }
       setRows(inProduction.map(po => {
         const dep = parseFloat(po.deposit_cost_value) || 0
         const total = parseFloat(po.total_cost_value) || 0
@@ -590,9 +595,9 @@ function BulkImportModal({ onClose, onSaved }) {
           currency: po.currency || 'USD',
           invoice_number: `INV-${po.id}`,
           deposit_amount: dep,
-          deposit_paid_date: po.deposit_payment_date || '',
+          deposit_paid_date: safeDate(po.deposit_payment_date),
           balance_amount: balance > 0 ? balance : 0,
-          balance_due_date: po.ex_factory_date || '',
+          balance_due_date: safeDate(po.ex_factory_date),
           total,
         }
       }))
