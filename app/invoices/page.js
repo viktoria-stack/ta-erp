@@ -563,6 +563,8 @@ function BulkImportModal({ onClose, onSaved }) {
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState('')
   const [done, setDone]       = useState(null)
+  const [search, setSearch]   = useState('')
+  const [supplierFilter, setSupplierFilter] = useState('All')
 
   useEffect(() => {
     const load = async () => {
@@ -601,6 +603,16 @@ function BulkImportModal({ onClose, onSaved }) {
 
   const upd = (i, field, val) => setRows(r => r.map((row, idx) => idx === i ? { ...row, [field]: val } : row))
 
+  const allSuppliers = [...new Set(rows.map(r => r.supplier_name).filter(Boolean))].sort()
+  const visible = rows.filter(r => {
+    const matchSearch = !search || r.po_id.toLowerCase().includes(search.toLowerCase()) || r.supplier_name.toLowerCase().includes(search.toLowerCase())
+    const matchSupplier = supplierFilter === 'All' || r.supplier_name === supplierFilter
+    return matchSearch && matchSupplier
+  })
+  const visibleIds = new Set(visible.map(r => r.po_id))
+  const selectedCount = rows.filter(r => r.selected).length
+  const visibleSelected = visible.filter(r => r.selected).length
+
   const create = async () => {
     const selected = rows.filter(r => r.selected)
     if (!selected.length) return
@@ -628,7 +640,6 @@ function BulkImportModal({ onClose, onSaved }) {
   }
 
   const inp = { background: T.subtle, border: `1px solid ${T.border}`, borderRadius: 4, padding: '4px 7px', color: T.text, fontSize: 12, outline: 'none' }
-  const selectedCount = rows.filter(r => r.selected).length
 
   return (
     <Modal title="Bulk Import Invoices from POs" onClose={onClose} wide>
@@ -651,12 +662,36 @@ function BulkImportModal({ onClose, onSaved }) {
             <div style={{ padding: '32px 0', textAlign: 'center', color: T.muted, fontSize: 13 }}>All POs in production already have invoices linked.</div>
           ) : (
             <>
+              {/* Filters */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                  placeholder="Search PO or supplier…"
+                  value={search} onChange={e => setSearch(e.target.value)}
+                  style={{ ...inp, padding: '6px 10px', width: 200 }}
+                />
+                <select value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}
+                  style={{ ...inp, padding: '6px 10px', cursor: 'pointer', color: supplierFilter !== 'All' ? T.accent : T.muted }}>
+                  <option value="All">All Suppliers</option>
+                  {allSuppliers.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {(search || supplierFilter !== 'All') && (
+                  <button onClick={() => { setSearch(''); setSupplierFilter('All') }}
+                    style={{ background: 'none', border: `1px solid ${T.border}`, color: T.muted, borderRadius: 4, padding: '5px 10px', fontSize: 11, cursor: 'pointer' }}>
+                    Clear
+                  </button>
+                )}
+                <span style={{ marginLeft: 'auto', fontSize: 12, color: T.muted }}>{visible.length} of {rows.length} shown</span>
+              </div>
+
               <div style={{ overflowX: 'auto', marginBottom: 16 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ background: T.surface }}>
                       <Th style={{ width: 32 }}>
-                        <input type="checkbox" checked={rows.every(r => r.selected)} onChange={e => setRows(r => r.map(row => ({ ...row, selected: e.target.checked })))} />
+                        <input type="checkbox"
+                          checked={visible.length > 0 && visible.every(r => r.selected)}
+                          onChange={e => setRows(r => r.map(row => visibleIds.has(row.po_id) ? { ...row, selected: e.target.checked } : row))}
+                        />
                       </Th>
                       <Th>PO</Th>
                       <Th>Supplier</Th>
@@ -669,29 +704,35 @@ function BulkImportModal({ onClose, onSaved }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r, i) => (
-                      <tr key={r.po_id} style={{ borderBottom: `1px solid ${T.border}`, opacity: r.selected ? 1 : 0.4 }}>
-                        <Td><input type="checkbox" checked={r.selected} onChange={e => upd(i, 'selected', e.target.checked)} /></Td>
-                        <Td style={{ fontFamily: 'monospace', fontWeight: 700, color: T.accent, whiteSpace: 'nowrap' }}>{r.po_id}</Td>
-                        <Td style={{ fontWeight: 600 }}>{r.supplier_name}</Td>
-                        <Td style={{ color: T.muted }}>{r.currency}</Td>
-                        <Td>
-                          <input value={r.invoice_number} onChange={e => upd(i, 'invoice_number', e.target.value)} style={{ ...inp, width: 140 }} />
-                        </Td>
-                        <Td style={{ textAlign: 'right', color: T.yellow, fontWeight: 600 }}>
-                          {r.deposit_amount > 0 ? fmt(r.deposit_amount, r.currency) : <span style={{ color: T.muted }}>—</span>}
-                        </Td>
-                        <Td>
-                          <input type="date" value={r.deposit_paid_date} onChange={e => upd(i, 'deposit_paid_date', e.target.value)} style={{ ...inp, width: 120 }} title="Leave blank if not yet paid" />
-                        </Td>
-                        <Td style={{ textAlign: 'right', color: T.blue, fontWeight: 600 }}>
-                          {r.balance_amount > 0 ? fmt(r.balance_amount, r.currency) : <span style={{ color: T.muted }}>—</span>}
-                        </Td>
-                        <Td>
-                          <input type="date" value={r.balance_due_date} onChange={e => upd(i, 'balance_due_date', e.target.value)} style={{ ...inp, width: 120 }} />
-                        </Td>
-                      </tr>
-                    ))}
+                    {visible.map((r) => {
+                      const i = rows.findIndex(row => row.po_id === r.po_id)
+                      return (
+                        <tr key={r.po_id} style={{ borderBottom: `1px solid ${T.border}`, opacity: r.selected ? 1 : 0.4 }}>
+                          <Td><input type="checkbox" checked={r.selected} onChange={e => upd(i, 'selected', e.target.checked)} /></Td>
+                          <Td style={{ fontFamily: 'monospace', fontWeight: 700, color: T.accent, whiteSpace: 'nowrap' }}>{r.po_id}</Td>
+                          <Td style={{ fontWeight: 600 }}>{r.supplier_name}</Td>
+                          <Td style={{ color: T.muted }}>{r.currency}</Td>
+                          <Td>
+                            <input value={r.invoice_number} onChange={e => upd(i, 'invoice_number', e.target.value)} style={{ ...inp, width: 140 }} />
+                          </Td>
+                          <Td style={{ textAlign: 'right', color: T.yellow, fontWeight: 600 }}>
+                            {r.deposit_amount > 0 ? fmt(r.deposit_amount, r.currency) : <span style={{ color: T.muted }}>—</span>}
+                          </Td>
+                          <Td>
+                            <input type="date" value={r.deposit_paid_date} onChange={e => upd(i, 'deposit_paid_date', e.target.value)} style={{ ...inp, width: 120 }} title="Leave blank if not yet paid" />
+                          </Td>
+                          <Td style={{ textAlign: 'right', color: T.blue, fontWeight: 600 }}>
+                            {r.balance_amount > 0 ? fmt(r.balance_amount, r.currency) : <span style={{ color: T.muted }}>—</span>}
+                          </Td>
+                          <Td>
+                            <input type="date" value={r.balance_due_date} onChange={e => upd(i, 'balance_due_date', e.target.value)} style={{ ...inp, width: 120 }} />
+                          </Td>
+                        </tr>
+                      )
+                    })}
+                    {visible.length === 0 && (
+                      <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: T.muted }}>No POs match the filter</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
