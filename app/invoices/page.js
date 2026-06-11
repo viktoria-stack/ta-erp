@@ -163,6 +163,135 @@ function InvoiceForm({ form, set, pos, pdf, setPdf, isEdit }) {
   )
 }
 
+// ─── UPLOAD & PARSE MODAL ──────────────────────────────────────
+function UploadModal({ pos, onClose, onSaved }) {
+  const [stage, setStage] = useState('drop') // 'drop' | 'parsing' | 'review'
+  const [file, setFile] = useState(null)
+  const [form, setForm] = useState({ invoice_type: 'supplier', currency: 'USD', invoice_date: today() })
+  const [parseError, setParseError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleFile = async (f) => {
+    if (!f) return
+    setFile(f)
+    setParseError('')
+    setStage('parsing')
+    try {
+      const fd = new FormData()
+      fd.append('file', f)
+      const res = await fetch('/api/parse-invoice', { method: 'POST', body: fd })
+      const json = await res.json()
+      if (json.error) throw new Error(json.error)
+      const d = json.data
+      setForm({
+        invoice_type: 'supplier',
+        invoice_number: d.invoice_number || '',
+        supplier_name: d.supplier_name || '',
+        invoice_date: d.invoice_date || today(),
+        currency: d.currency || 'USD',
+        payment_terms: d.payment_terms || '',
+        deposit_amount: d.deposit_amount ?? '',
+        deposit_due_date: d.deposit_due_date || '',
+        balance_amount: d.balance_amount ?? '',
+        balance_due_date: d.balance_due_date || '',
+        notes: d.notes || '',
+      })
+      setStage('review')
+    } catch (e) {
+      setParseError(e.message)
+      setStage('drop')
+    }
+  }
+
+  const save = async () => {
+    if (!form.invoice_number || !form.supplier_name) { setSaveError('Invoice number and supplier required'); return }
+    setSaving(true); setSaveError('')
+    try {
+      let pdf_url = null
+      if (file) {
+        const path = `invoices/${Date.now()}_${file.name}`
+        const { error: upErr } = await supabase.storage.from('invoices').upload(path, file)
+        if (!upErr) {
+          const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(path)
+          pdf_url = publicUrl
+        }
+      }
+      const dep = parseFloat(form.deposit_amount) || 0
+      const bal = parseFloat(form.balance_amount) || 0
+      const { error: dbErr } = await supabase.from('invoices').insert({
+        ...form,
+        deposit_amount: dep, balance_amount: bal, amount: dep + bal,
+        deposit_due_date: form.deposit_due_date || null,
+        deposit_paid_date: form.deposit_paid_date || null,
+        balance_due_date: form.balance_due_date || null,
+        balance_paid_date: form.balance_paid_date || null,
+        po_id: form.po_id || null, pdf_url,
+      })
+      if (dbErr) throw new Error(dbErr.message)
+      onSaved(); onClose()
+    } catch (e) { setSaveError(e.message) } finally { setSaving(false) }
+  }
+
+  const dropZone = {
+    border: `2px dashed ${T.border}`, borderRadius: 10, padding: '48px 24px',
+    textAlign: 'center', cursor: 'pointer', color: T.muted,
+    transition: 'border-color 0.15s',
+  }
+
+  return (
+    <Modal title="Upload Invoice" onClose={onClose} wide>
+      {stage === 'drop' && (
+        <>
+          {parseError && (
+            <div style={{ background: '#ef444415', color: '#ef4444', border: '1px solid #ef444430', borderRadius: 6, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+              ⚠ {parseError}
+            </div>
+          )}
+          <div
+            style={dropZone}
+            onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = T.accent }}
+            onDragLeave={e => { e.currentTarget.style.borderColor = T.border }}
+            onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = T.border; handleFile(e.dataTransfer.files[0]) }}
+            onClick={() => document.getElementById('invoiceUploadInput').click()}
+          >
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 6 }}>Drop your invoice here or click to browse</div>
+            <div style={{ fontSize: 12, color: T.muted }}>PDF or image (JPG, PNG) — Claude will extract all details automatically</div>
+            <input id="invoiceUploadInput" type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+          </div>
+        </>
+      )}
+
+      {stage === 'parsing' && (
+        <div style={{ textAlign: 'center', padding: '60px 24px' }}>
+          <div style={{ width: 40, height: 40, border: `3px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 20px' }} />
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 6 }}>Analysing invoice…</div>
+          <div style={{ fontSize: 12, color: T.muted }}>Claude is reading {file?.name}</div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        </div>
+      )}
+
+      {stage === 'review' && (
+        <>
+          <div style={{ background: '#22c55e15', border: '1px solid #22c55e30', borderRadius: 6, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#22c55e', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span>✓</span>
+            <span>Extracted from <strong>{file?.name}</strong> — review and confirm below</span>
+            <button onClick={() => { setStage('drop'); setFile(null) }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 12 }}>← Re-upload</button>
+          </div>
+          {saveError && <div style={{ background: '#ef444415', color: '#ef4444', border: '1px solid #ef444430', borderRadius: 6, padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>{saveError}</div>}
+          <InvoiceForm form={form} set={set} pos={pos} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+            <button onClick={onClose} style={{ background: T.subtle, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '8px 20px', cursor: 'pointer' }}>Cancel</button>
+            <button onClick={save} disabled={saving} style={{ background: T.accent, border: 'none', color: '#fff', borderRadius: 6, padding: '8px 20px', cursor: 'pointer', fontWeight: 700 }}>{saving ? 'Saving…' : 'Save Invoice'}</button>
+          </div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
 // ─── ADD MODAL ─────────────────────────────────────────────────
 function AddModal({ pos, onClose, onSaved }) {
   const [form, setForm] = useState({ invoice_type: 'supplier', currency: 'USD', invoice_date: today() })
@@ -340,6 +469,7 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('invoices')
   const [showAdd, setShowAdd] = useState(false)
+  const [showUpload, setShowUpload] = useState(false)
   const [selected, setSelected] = useState(null)
   const [pdfViewer, setPdfViewer] = useState(null)
   const [statusFilter, setStatusFilter] = useState('All')
@@ -376,6 +506,7 @@ export default function InvoicesPage() {
   return (
     <Shell title="Invoices">
       {showAdd && <AddModal pos={pos} onClose={() => setShowAdd(false)} onSaved={load} />}
+      {showUpload && <UploadModal pos={pos} onClose={() => setShowUpload(false)} onSaved={load} />}
       {selected && <EditModal invoice={selected} pos={pos} onClose={() => setSelected(null)} onSaved={load} />}
 
       {pdfViewer && (
@@ -405,7 +536,10 @@ export default function InvoicesPage() {
             <button key={k} onClick={() => setTab(k)} style={{ background: tab === k ? T.accent : T.subtle, color: tab === k ? '#fff' : T.muted, border: 'none', borderRadius: 6, padding: '7px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{label}</button>
           ))}
         </div>
-        <button onClick={() => setShowAdd(true)} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>+ Add Invoice</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setShowUpload(true)} style={{ background: T.subtle, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 18px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>⬆ Upload Invoice</button>
+          <button onClick={() => setShowAdd(true)} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>+ Add Invoice</button>
+        </div>
       </div>
 
       {tab === 'cashflow' ? <CashflowView invoices={invoices} /> : (
