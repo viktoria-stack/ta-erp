@@ -805,10 +805,20 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
     return headers.findIndex(h => rx.test(String(h).trim()))
   }
 
+  const SIZE_SPLIT = [
+    { size: 'S',   row: 0.12, us: 0.10 },
+    { size: 'M',   row: 0.32, us: 0.27 },
+    { size: 'L',   row: 0.30, us: 0.32 },
+    { size: 'XL',  row: 0.21, us: 0.21 },
+    { size: 'XXL', row: 0.05, us: 0.09 },
+  ]
+  const ROW_SPLIT = 0.47
+  const US_SPLIT  = 0.53
+
   const parseSheet = (sheetName, data) => {
     if (!data || data.length < 2) return []
     // find the header row by scanning up to row 20
-    const headerRx = /product|description|sku|colour|color|size|qty|quantity|cost|design/i
+    const headerRx = /product|description|sku|colour|color|size|qty|quantity|cost|design|total/i
     let headerRowIdx = 0
     for (let i = 0; i < Math.min(20, data.length); i++) {
       const row = data[i] || []
@@ -816,34 +826,37 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
       if (matches.length >= 2) { headerRowIdx = i; break }
     }
     const headers = (data[headerRowIdx] || []).map(h => String(h ?? '').trim())
-    let iName    = colMatch(headers, 'product.?name', 'product', 'description', 'item', 'style', 'garment', 'name')
-    const iSize    = colMatch(headers, '^size$', 'size')
+    let iName  = colMatch(headers, 'product.?name', 'product', 'description', 'item', 'style', 'garment', 'name')
     const iSku     = colMatch(headers, '^sku$', 'barcode', 'article')
     const iDesign  = colMatch(headers, 'design.?ref', 'design', 'style.?ref', 'style.?no', 'ref.?no')
     const iColour  = colMatch(headers, 'colour.?code', 'colou?r')
     const iCost    = colMatch(headers, 'cost.?price', 'cost', 'unit.?price', '^price')
-    const iUK      = colMatch(headers, 'uk.?quantity', 'qty.?uk', 'uk.?qty', '^uk$', 'gb.?qty', 'qty.?gb')
-    const iUS      = colMatch(headers, 'usa.?quantity', 'qty.?us', 'us.?qty', '^us[a]?$', 'usa.?qty', 'qty.?usa')
+    const iTotal   = colMatch(headers, 'total.?quantity', 'total.?qty', 'total.?units', 'total')
     const iXF      = colMatch(headers, 'confirmed', 'xf', 'ex.?factory', 'approved')
-    // fall back to column 0 if no name column detected
     if (iName < 0) iName = 0
     const g = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : ''
     const n = (row, i) => i >= 0 ? (parseFloat(String(row[i] ?? '').replace(/[,\s]/g, '')) || 0) : 0
 
     return data.slice(headerRowIdx + 1)
       .filter(row => row.some(c => c !== null && c !== undefined && c !== ''))
-      .map(row => ({
-        product_name: g(row, iName),
-        size:         g(row, iSize) || 'M',
-        sku:          g(row, iSku),
-        design_ref:   g(row, iDesign),
-        colour_code:  g(row, iColour),
-        cost_price:   n(row, iCost),
-        qty_uk:       n(row, iUK),
-        qty_usa:      n(row, iUS),
-        confirmed_xf: n(row, iXF),
-      }))
-      .filter(r => r.product_name || r.sku || r.design_ref || r.colour_code || r.qty_uk > 0 || r.qty_usa > 0)
+      .flatMap(row => {
+        const base = {
+          product_name: g(row, iName),
+          sku:          g(row, iSku),
+          design_ref:   g(row, iDesign),
+          colour_code:  g(row, iColour),
+          cost_price:   n(row, iCost),
+          confirmed_xf: n(row, iXF),
+        }
+        if (!base.product_name && !base.sku && !base.design_ref && !base.colour_code) return []
+        const total = n(row, iTotal)
+        return SIZE_SPLIT.map(({ size, row: rRatio, us: uRatio }) => ({
+          ...base,
+          size,
+          qty_uk:  Math.round(total * ROW_SPLIT * rRatio),
+          qty_usa: Math.round(total * US_SPLIT  * uRatio),
+        }))
+      })
   }
 
   const handleFile = (file) => {
