@@ -380,6 +380,24 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
   const [linesLoading, setLinesLoading] = useState(false)
   const [confirmDelPO, setConfirmDelPO] = useState(false)
   const [deletingPO, setDeletingPO] = useState(false)
+  const [checklist, setChecklist] = useState({
+    skus_created: po.skus_created || false,
+    barcodes_sent: po.barcodes_sent || false,
+    polybags_sent: po.polybags_sent || false,
+    po_splits_confirmed: po.po_splits_confirmed || false,
+  })
+
+  const toggleChecklist = async (field) => {
+    const newVal = !checklist[field]
+    setChecklist(c => ({ ...c, [field]: newVal }))
+    try {
+      await updatePurchaseOrder(po.id, { [field]: newVal })
+      onSaved()
+    } catch(e) {
+      setChecklist(c => ({ ...c, [field]: !newVal }))
+      alert(e.message)
+    }
+  }
   const shipments = (po.shipments || []).sort((a,b)=>a.dc.localeCompare(b.dc))
 
   const doDeletePO = async () => {
@@ -429,15 +447,18 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
       {/* PO checklist + deposit */}
       <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
         {[
-          { val:po.skus_created, label:'SKUs Created' },
-          { val:po.barcodes_sent, label:'Barcodes Sent' },
-          { val:po.polybags_sent, label:'Polybags Sent' },
-          { val:po.po_splits_confirmed, label:'PO Splits Confirmed' },
-        ].map(c=>(
-          <span key={c.label} style={{ background:c.val?T.greenDim:T.subtle, color:c.val?T.green:T.muted, border:`1px solid ${c.val?T.green+'40':T.border}`, borderRadius:4, padding:'3px 10px', fontSize:11, fontWeight:600 }}>
-            {c.val?'✓':'○'} {c.label}
-          </span>
-        ))}
+          { field:'skus_created', label:'SKUs Created' },
+          { field:'barcodes_sent', label:'Barcodes Sent' },
+          { field:'polybags_sent', label:'Polybags Sent' },
+          { field:'po_splits_confirmed', label:'PO Splits Confirmed' },
+        ].map(c=>{
+          const on = checklist[c.field]
+          return (
+            <button key={c.field} onClick={()=>toggleChecklist(c.field)} style={{ background:on?T.greenDim:T.subtle, color:on?T.green:T.muted, border:`1px solid ${on?T.green+'40':T.border}`, borderRadius:4, padding:'3px 10px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+              {on?'✓':'○'} {c.label}
+            </button>
+          )
+        })}
         <div style={{ marginLeft:'auto', fontSize:12, color:T.muted }}>
           Deposit: <strong style={{ color:T.text }}>{fmt(po.deposit_cost_value, po.currency||'USD')}</strong>
           {po.deposit_payment_date && <span style={{ marginLeft:6 }}>({po.deposit_payment_date})</span>}
