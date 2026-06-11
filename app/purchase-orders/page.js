@@ -808,14 +808,14 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
   const parseSheet = (sheetName, data) => {
     if (!data || data.length < 2) return []
     const headers = data[0].map(h => String(h ?? '').trim())
-    let iName    = colMatch(headers, 'product', 'description', 'item', 'style', 'garment', 'name')
+    let iName    = colMatch(headers, 'product.?name', 'product', 'description', 'item', 'style', 'garment', 'name')
     const iSize    = colMatch(headers, '^size$', 'size')
-    const iSku     = colMatch(headers, '^sku', 'barcode', 'article')
-    const iDesign  = colMatch(headers, 'design', 'style.?ref', 'style.?no', 'ref.?no')
-    const iColour  = colMatch(headers, 'colou?r', 'colour')
-    const iCost    = colMatch(headers, 'cost', 'unit.?price', '^price')
-    const iUK      = colMatch(headers, 'qty.?uk', 'uk.?qty', '^uk$', 'gb.?qty', 'qty.?gb', 'uk')
-    const iUS      = colMatch(headers, 'qty.?us', 'us.?qty', '^us[a]?$', 'usa.?qty', 'qty.?usa', 'usa', '^us$')
+    const iSku     = colMatch(headers, '^sku$', 'barcode', 'article')
+    const iDesign  = colMatch(headers, 'design.?ref', 'design', 'style.?ref', 'style.?no', 'ref.?no')
+    const iColour  = colMatch(headers, 'colour.?code', 'colou?r')
+    const iCost    = colMatch(headers, 'cost.?price', 'cost', 'unit.?price', '^price')
+    const iUK      = colMatch(headers, 'uk.?quantity', 'qty.?uk', 'uk.?qty', '^uk$', 'gb.?qty', 'qty.?gb')
+    const iUS      = colMatch(headers, 'usa.?quantity', 'qty.?us', 'us.?qty', '^us[a]?$', 'usa.?qty', 'qty.?usa')
     const iXF      = colMatch(headers, 'confirmed', 'xf', 'ex.?factory', 'approved')
     // fall back to column 0 if no name column detected
     if (iName < 0) iName = 0
