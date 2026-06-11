@@ -13,7 +13,7 @@ async function loadDashboard() {
     { data: invStats },
     { data: invoices },
   ] = await Promise.all([
-    supabase.from('purchase_orders').select('id, supplier_name, total_cost_value, currency, ex_factory_date, po_splits_confirmed, created_at'),
+    supabase.from('purchase_orders').select('id, supplier_name, total_cost_value, currency, ex_factory_date, po_splits_confirmed, sheet_status, created_at'),
     supabase.from('shipments').select('id, po_id, dc, status, units, eta, freight_forwarder, shipment_ref, tracking_number'),
     supabase.from('suppliers').select('id, name, code, status'),
     supabase.from('inventory').select('qty_uk, qty_us').limit(5000),
@@ -21,6 +21,25 @@ async function loadDashboard() {
   ])
 
   return { pos: pos || [], shipments: shipments || [], suppliers: suppliers || [], invStats: invStats || [], invoices: invoices || [] }
+}
+
+const sheetStatusToPoStatus = (ss) => {
+  if (!ss) return null
+  const s = ss.toLowerCase()
+  if (s.includes('delivered') || s.includes('booked in') || s.includes('booked-in')) return 'Completed'
+  if (s.includes('receipt')) return 'Receipt in progress'
+  if (s.includes('transit') || s.includes('shipped')) return 'In transit'
+  if (s.includes('production')) return 'In production'
+  return null
+}
+
+const getPoStatus = (po, poShipments) => {
+  const s = poShipments || []
+  if (s.length === 0) return sheetStatusToPoStatus(po.sheet_status) || 'In production'
+  if (s.every(x => !x.status || x.status === 'In production')) return 'In production'
+  if (s.every(x => x.status && (x.status.includes('Booked in') || x.status.includes('Delivered')))) return 'Completed'
+  if (s.some(x => x.status && x.status.includes('Receipt'))) return 'Receipt in progress'
+  return 'In transit'
 }
 
 const statusColor = (s) => ({
@@ -118,6 +137,12 @@ export default function DashboardPage() {
   const totalPOValue = pos.reduce((s, p) => s + (p.total_cost_value || 0), 0)
 
   // ── Shipment stats
+  const shipmentsByPO = {}
+  for (const sh of shipments) {
+    if (!shipmentsByPO[sh.po_id]) shipmentsByPO[sh.po_id] = []
+    shipmentsByPO[sh.po_id].push(sh)
+  }
+  const inProductionPOs = pos.filter(po => getPoStatus(po, shipmentsByPO[po.id]) === 'In production')
   const inProduction = shipments.filter(s => s.status === 'In production')
   const inTransit = shipments.filter(s => s.status?.includes('transit'))
   const receipt = shipments.filter(s => s.status === 'Receipt in progress')
@@ -180,7 +205,7 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10, marginBottom: 20 }}>
         <KPIBox label="Total POs" value={pos.length} onClick={() => router.push('/purchase-orders')} />
         <KPIBox label="⚠ Unsplit" value={unsplitPOs.length} color={unsplitPOs.length > 0 ? T.yellow : T.muted} onClick={() => router.push('/purchase-orders')} />
-        <KPIBox label="In Production" value={inProduction.length} color={T.yellow} onClick={() => router.push('/purchase-orders')} />
+        <KPIBox label="In Production" value={inProductionPOs.length} color={T.yellow} onClick={() => router.push('/purchase-orders')} />
         <KPIBox label="In Transit" value={inTransit.length} color={T.blue} onClick={() => router.push('/purchase-orders')} />
         <KPIBox label="Booked In" value={bookedIn.length} color={T.green} onClick={() => router.push('/purchase-orders')} />
         <KPIBox label="🇬🇧 UK Stock" value={totalUK.toLocaleString()} color="#3b82f6" onClick={() => router.push('/inventory')} />
