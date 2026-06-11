@@ -280,15 +280,16 @@ function UploadModal({ pos, onClose, onSaved }) {
 
     setStage('parsing')
     try {
-      const pdfjsLib = await import('pdfjs-dist')
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
+      const pdfjs = await import('pdfjs-dist')
+      const pdfjsLib = pdfjs.default ?? pdfjs
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
       const ab = await f.arrayBuffer()
-      const pdf = await pdfjsLib.getDocument({ data: ab }).promise
+      const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise
       let text = ''
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i)
         const content = await page.getTextContent()
-        text += content.items.map(item => item.str).join(' ') + '\n'
+        text += content.items.map(item => item.str ?? '').join(' ') + '\n'
       }
       const parsed = parseInvoiceText(text)
       setForm(prev => ({ ...prev, ...Object.fromEntries(Object.entries(parsed).filter(([, v]) => v != null)) }))
