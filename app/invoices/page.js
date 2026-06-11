@@ -52,6 +52,26 @@ const Field = ({ label, children, half }) => (
 const Row = ({ children }) => <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>{children}</div>
 const Section = ({ title }) => <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '20px 0 12px', paddingBottom: 6, borderBottom: `1px solid ${T.border}` }}>{title}</div>
 
+const SUPPLIER_PAYMENT_TERMS = {
+  'LSA': 75,
+  'PPK': 60,
+}
+
+const addDays = (dateStr, days) => {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return ''
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+const balanceDueDate = (supplier_name, xf_date) => {
+  const name = (supplier_name || '').toUpperCase().trim()
+  const match = Object.keys(SUPPLIER_PAYMENT_TERMS).find(k => name.includes(k))
+  if (match && xf_date) return addDays(xf_date, SUPPLIER_PAYMENT_TERMS[match])
+  return xf_date || ''
+}
+
 const milestoneStatus = (amount, due_date, paid_date) => {
   if (!amount || amount <= 0) return null
   if (paid_date) return 'paid'
@@ -627,7 +647,7 @@ function BulkImportModal({ onClose, onSaved }) {
           deposit_amount: dep,
           deposit_paid_date: safeDate(po.deposit_payment_date),
           balance_amount: balance > 0 ? balance : 0,
-          balance_due_date: safeDate(po.ex_factory_date),
+          balance_due_date: balanceDueDate(po.supplier_name, safeDate(po.ex_factory_date)),
           total,
         }
       }))
@@ -689,7 +709,8 @@ function BulkImportModal({ onClose, onSaved }) {
       ) : (
         <>
           <div style={{ background: T.subtle, borderRadius: 6, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: T.muted }}>
-            Showing POs <strong style={{ color: T.text }}>without an existing invoice</strong> and not yet delivered. Deposit is pre-filled from PO data. Balance due date = Ex-Factory date.
+            Showing POs <strong style={{ color: T.text }}>without an existing invoice</strong> and not yet delivered. Deposit is pre-filled from PO data.
+            Balance due date = Ex-Factory date, except <strong style={{ color: T.text }}>LSA +75 days</strong> and <strong style={{ color: T.text }}>PPK +60 days</strong>.
           </div>
           {error && <div style={{ background: '#ef444415', color: '#ef4444', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 13 }}>{error}</div>}
 
