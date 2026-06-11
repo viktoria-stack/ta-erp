@@ -88,23 +88,40 @@ export async function GET(req) {
     }
 
     const data = await res.json()
-    const rows = (data.rows || []).map(row => {
-      const [nameVal, idVal] = row.dimensionValues
-      // With 2 date ranges + 4 metrics: values interleaved as [m0_cur, m0_prev, m1_cur, m1_prev, ...]
+
+    // GA4 adds dateRange as an extra dimension when multiple ranges requested.
+    // Each product appears twice: once for "current", once for "previous".
+    const grouped = {}
+    for (const row of (data.rows || [])) {
+      const name  = row.dimensionValues[0]?.value || ''
+      const id    = row.dimensionValues[1]?.value || ''
+      const range = row.dimensionValues[2]?.value || 'current'
+      const key   = `${name}||${id}`
+      if (!grouped[key]) grouped[key] = { item_name: name, item_id: id }
       const mv = row.metricValues.map(m => parseFloat(m.value) || 0)
-      return {
-        item_name:      nameVal.value,
-        item_id:        idVal.value,
-        revenue:        mv[0],
-        revenue_prev:   mv[1],
-        purchased:      mv[2],
-        purchased_prev: mv[3],
-        viewed:         mv[4],
-        viewed_prev:    mv[5],
-        add_to_cart:    mv[6],
-        add_to_cart_prev: mv[7],
+      const isCurrent = range === 'current' || range === 'date_range_0'
+      if (isCurrent) {
+        grouped[key].revenue     = mv[0]
+        grouped[key].purchased   = mv[1]
+        grouped[key].viewed      = mv[2]
+        grouped[key].add_to_cart = mv[3]
+      } else {
+        grouped[key].revenue_prev     = mv[0]
+        grouped[key].purchased_prev   = mv[1]
+        grouped[key].viewed_prev      = mv[2]
+        grouped[key].add_to_cart_prev = mv[3]
       }
-    })
+    }
+
+    const rows = Object.values(grouped)
+      .map(r => ({
+        ...r,
+        revenue_prev:       r.revenue_prev     ?? 0,
+        purchased_prev:     r.purchased_prev   ?? 0,
+        viewed_prev:        r.viewed_prev      ?? 0,
+        add_to_cart_prev:   r.add_to_cart_prev ?? 0,
+      }))
+      .sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
 
     return NextResponse.json({ rows, days })
   } catch (err) {
