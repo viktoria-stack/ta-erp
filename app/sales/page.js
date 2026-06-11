@@ -3,16 +3,10 @@ import { useEffect, useState, useMemo } from 'react'
 import Shell from '@/components/Shell'
 import { T, Th, Td, Loading } from '@/components/ui'
 
-const DATE_PRESETS = [
-  { label: 'Last 7 days',  start: '7daysAgo',   end: 'today' },
-  { label: 'Last 30 days', start: '30daysAgo',  end: 'today' },
-  { label: 'Last 90 days', start: '90daysAgo',  end: 'today' },
-  { label: 'This year',    start: '2025-01-01', end: 'today' },
-  { label: 'All time',     start: '2020-01-01', end: 'today' },
-]
-
 const fmt = (n, currency = 'GBP') =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n)
+
+const num = v => Number(v) || 0
 
 export default function SalesPage() {
   const [rows, setRows]       = useState([])
@@ -20,32 +14,31 @@ export default function SalesPage() {
   const [error, setError]     = useState('')
   const [search, setSearch]   = useState('')
   const [onlyWithSales, setOnlyWithSales] = useState(true)
-  const [sortCol, setSortCol] = useState('units_sold')
+  const [sortCol, setSortCol] = useState('sold_total')
   const [sortAsc, setSortAsc] = useState(false)
-  const [preset, setPreset]   = useState(1) // 30 days default
-  const [dateRange, setDateRange] = useState(null)
 
-  const load = async (p = preset) => {
-    setLoading(true); setError('')
-    try {
-      const { start, end } = DATE_PRESETS[p]
-      const res = await fetch(`/api/sales-data?start=${start}&end=${end}`)
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setRows(data.rows || [])
-      setDateRange(data.dateRange)
-    } catch (e) { setError(e.message) }
-    finally { setLoading(false) }
-  }
-
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    setLoading(true)
+    fetch('/api/sales-data')
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error)
+        setRows(data.rows || [])
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [])
 
   const filtered = useMemo(() => {
     let r = rows
-    if (onlyWithSales) r = r.filter(x => x.units_sold > 0)
+    if (onlyWithSales) r = r.filter(x => num(x.sold_total) > 0 || num(x.sold_row) > 0 || num(x.sold_us) > 0)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
-      r = r.filter(x => x.product_name.toLowerCase().includes(q) || x.sku.toLowerCase().includes(q))
+      r = r.filter(x =>
+        (x.product_name || '').toLowerCase().includes(q) ||
+        (x.sku || '').toLowerCase().includes(q) ||
+        (x.season || '').toLowerCase().includes(q)
+      )
     }
     return [...r].sort((a, b) => {
       const av = a[sortCol] ?? '', bv = b[sortCol] ?? ''
@@ -54,10 +47,13 @@ export default function SalesPage() {
     })
   }, [rows, search, onlyWithSales, sortCol, sortAsc])
 
-  const totalUnits   = rows.reduce((s, r) => s + r.units_sold, 0)
-  const totalRevenue = rows.reduce((s, r) => s + r.revenue,    0)
-  const skusSelling  = rows.filter(r => r.units_sold > 0).length
-  const topProduct   = rows[0]
+  const totalStockRow   = rows.reduce((s, r) => s + num(r.stock_row), 0)
+  const totalStockUs    = rows.reduce((s, r) => s + num(r.stock_us), 0)
+  const totalSoldLW     = rows.reduce((s, r) => s + num(r.sold_total), 0)
+  const totalCostValue  = rows.reduce((s, r) => s + num(r.cost_row) + num(r.cost_us), 0)
+  const avgWeeksCover   = rows.filter(r => num(r.weeks_total) > 0).length > 0
+    ? rows.reduce((s, r) => s + num(r.weeks_total), 0) / rows.filter(r => num(r.weeks_total) > 0).length
+    : 0
 
   const sort = col => {
     if (sortCol === col) setSortAsc(a => !a)
@@ -70,24 +66,20 @@ export default function SalesPage() {
     </Th>
   )
 
+  const NumTd = ({ v, color }) => (
+    <Td style={{ textAlign: 'right', color: color || T.text, fontVariantNumeric: 'tabular-nums' }}>
+      {num(v) === 0 ? <span style={{ color: T.muted }}>—</span> : num(v).toLocaleString()}
+    </Td>
+  )
+
   return (
     <Shell title="Sales">
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px 40px' }}>
+      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px 40px' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: 28, letterSpacing: '-0.5px' }}>Sales</div>
-            <div style={{ color: T.muted, fontSize: 13, marginTop: 2 }}>Google Analytics 4 — e-commerce data</div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {DATE_PRESETS.map((p, i) => (
-              <button key={i} onClick={() => { setPreset(i); load(i) }}
-                style={{ background: preset === i ? T.accent : T.surface, color: preset === i ? '#fff' : T.muted, border: `1px solid ${preset === i ? T.accent : T.border}`, borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                {p.label}
-              </button>
-            ))}
-          </div>
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: 28, letterSpacing: '-0.5px' }}>Live Stock & Sales</div>
+          <div style={{ color: T.muted, fontSize: 13, marginTop: 2 }}>Core | Live Stock & Commitment — Google Sheets</div>
         </div>
 
         {error && (
@@ -98,16 +90,14 @@ export default function SalesPage() {
         {!loading && rows.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
             {[
-              { label: 'Total Units Sold', value: totalUnits.toLocaleString(),  color: T.accent },
-              { label: 'Total Revenue',    value: fmt(totalRevenue),             color: T.green },
-              { label: 'SKUs Selling',     value: skusSelling.toLocaleString(), color: '#3b82f6' },
-              { label: 'Top Seller',       value: topProduct?.product_name?.slice(0,32) + (topProduct?.product_name?.length > 32 ? '…' : '') || '—',
-                                           sub:   topProduct ? `${topProduct.units_sold} units · ${fmt(topProduct.revenue)}` : '', color: '#a78bfa' },
+              { label: 'Stock ROW',         value: totalStockRow.toLocaleString(),  color: T.accent },
+              { label: 'Stock US',           value: totalStockUs.toLocaleString(),   color: '#3b82f6' },
+              { label: 'Sold Last Week',     value: totalSoldLW.toLocaleString(),    color: T.green },
+              { label: 'Total Cost Value',   value: fmt(totalCostValue),             color: '#a78bfa' },
             ].map(k => (
               <div key={k.label} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '16px 18px' }}>
                 <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{k.label}</div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: k.color, lineHeight: 1.2 }}>{k.value}</div>
-                {k.sub && <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>{k.sub}</div>}
               </div>
             ))}
           </div>
@@ -117,8 +107,8 @@ export default function SalesPage() {
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search product or SKU…"
-            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 12px', color: T.text, fontSize: 13, outline: 'none', width: 260 }}
+            placeholder="Search product, SKU or season…"
+            style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 12px', color: T.text, fontSize: 13, outline: 'none', width: 280 }}
           />
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: T.muted, cursor: 'pointer', userSelect: 'none' }}>
             <input type="checkbox" checked={onlyWithSales} onChange={e => setOnlyWithSales(e.target.checked)} />
@@ -133,24 +123,42 @@ export default function SalesPage() {
         {loading ? <Loading /> : (
           <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: T.surface }}>
+                    <SortTh col="season">Season</SortTh>
                     <SortTh col="product_name">Product</SortTh>
                     <SortTh col="sku">SKU</SortTh>
-                    <SortTh col="units_sold" right>Units Sold</SortTh>
-                    <SortTh col="revenue" right>Revenue</SortTh>
+                    <Th style={{ textAlign: 'center', color: T.muted, fontSize: 11, whiteSpace: 'nowrap' }} colSpan={3}>Stock (ROW / US / Total)</Th>
+                    <Th style={{ textAlign: 'center', color: T.muted, fontSize: 11, whiteSpace: 'nowrap' }} colSpan={3}>Sold Last Week (ROW / US / Total)</Th>
+                    <SortTh col="weeks_total" right>Wks Cover</SortTh>
+                    <SortTh col="cost_row" right>Cost ROW</SortTh>
+                    <SortTh col="cost_us" right>Cost US</SortTh>
+                    <SortTh col="sell_row" right>Sell ROW</SortTh>
+                    <SortTh col="sell_us" right>Sell US</SortTh>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={4} style={{ padding: 32, textAlign: 'center', color: T.muted, fontSize: 13 }}>No results</td></tr>
+                    <tr><td colSpan={14} style={{ padding: 32, textAlign: 'center', color: T.muted, fontSize: 13 }}>No results</td></tr>
                   ) : filtered.map((r, i) => (
                     <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
-                      <Td style={{ fontWeight: 600 }}>{r.product_name || '—'}</Td>
-                      <Td style={{ fontFamily: 'monospace', fontSize: 12, color: T.muted }}>{r.sku || '—'}</Td>
-                      <Td style={{ textAlign: 'right', fontWeight: 700, color: T.accent }}>{r.units_sold.toLocaleString()}</Td>
-                      <Td style={{ textAlign: 'right', color: T.green, fontWeight: 600 }}>{fmt(r.revenue)}</Td>
+                      <Td style={{ fontSize: 12, color: T.muted, whiteSpace: 'nowrap' }}>{r.season || '—'}</Td>
+                      <Td style={{ fontWeight: 600, whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.product_name || '—'}</Td>
+                      <Td style={{ fontFamily: 'monospace', fontSize: 12, color: T.muted, whiteSpace: 'nowrap' }}>{r.sku || '—'}</Td>
+                      <NumTd v={r.stock_row} />
+                      <NumTd v={r.stock_us} />
+                      <NumTd v={r.stock_total} color={T.accent} />
+                      <NumTd v={r.sold_row} />
+                      <NumTd v={r.sold_us} />
+                      <NumTd v={r.sold_total} color={T.green} />
+                      <Td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: num(r.weeks_total) < 4 && num(r.weeks_total) > 0 ? '#ef4444' : num(r.weeks_total) < 8 ? '#f59e0b' : T.text }}>
+                        {num(r.weeks_total) === 0 ? <span style={{ color: T.muted }}>—</span> : num(r.weeks_total).toFixed(1)}
+                      </Td>
+                      <Td style={{ textAlign: 'right', color: T.muted, fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{num(r.cost_row) ? fmt(r.cost_row) : '—'}</Td>
+                      <Td style={{ textAlign: 'right', color: T.muted, fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{num(r.cost_us) ? fmt(r.cost_us) : '—'}</Td>
+                      <Td style={{ textAlign: 'right', color: T.muted, fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{num(r.sell_row) ? fmt(r.sell_row) : '—'}</Td>
+                      <Td style={{ textAlign: 'right', color: T.muted, fontVariantNumeric: 'tabular-nums', fontSize: 12 }}>{num(r.sell_us) ? fmt(r.sell_us) : '—'}</Td>
                     </tr>
                   ))}
                 </tbody>

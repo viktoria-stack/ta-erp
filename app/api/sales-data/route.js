@@ -3,7 +3,8 @@ export const runtime = 'nodejs'
 import { createSign, createPrivateKey } from 'node:crypto'
 import { NextResponse } from 'next/server'
 
-const GA4_PROPERTY_ID = '376140937'
+const SPREADSHEET_ID = '1-O2BD5mQmZgJgpIgefbqgDtexeoUQ8x9PQfZLYV-MJw'
+const SHEET_NAME = 'Core | Live Stock & Commitment'
 
 async function getAccessToken() {
   let rawKey
@@ -23,12 +24,7 @@ async function getAccessToken() {
   const now = Math.floor(Date.now() / 1000)
   const b64url = buf => Buffer.from(buf).toString('base64').replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')
   const header  = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
-  const payload = b64url(JSON.stringify({
-    iss: email, sub: email,
-    aud: 'https://oauth2.googleapis.com/token',
-    scope: 'https://www.googleapis.com/auth/analytics.readonly',
-    iat: now, exp: now + 3600,
-  }))
+  const payload = b64url(JSON.stringify({ iss: email, sub: email, aud: 'https://oauth2.googleapis.com/token', scope: 'https://www.googleapis.com/auth/spreadsheets.readonly', iat: now, exp: now + 3600 }))
   const signer = createSign('RSA-SHA256')
   signer.update(`${header}.${payload}`)
   const sig = signer.sign(privateKey, 'base64').replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')
@@ -43,51 +39,61 @@ async function getAccessToken() {
   return access_token
 }
 
-export async function GET(request) {
+const num = v => parseFloat(String(v ?? '').replace(/[£$,\s]/g, '')) || 0
+
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url)
-    const startDate = searchParams.get('start') || '2024-01-01'
-    const endDate   = searchParams.get('end')   || 'today'
-
     const token = await getAccessToken()
-
-    const body = {
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [
-        { name: 'itemName' },
-        { name: 'itemId' },
-      ],
-      metrics: [
-        { name: 'itemsPurchased' },
-        { name: 'itemRevenue' },
-      ],
-      limit: 10000,
-      orderBys: [{ metric: { metricName: 'itemsPurchased' }, desc: true }],
-    }
-
-    const res = await fetch(
-      `https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }
-    )
-
+    // Columns: A=season, B=product, C=sku,
+    // D=stock_row, E=stock_us, F=stock_total,
+    // G=sold_row, H=sold_us, I=sold_total,
+    // J=weeks_row, K=weeks_us, L=weeks_total,
+    // M=cost_row,  N=cost_us,
+    // O=sell_row,  P=sell_us
+    const range = `'${SHEET_NAME}'!A:P`
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
     if (!res.ok) {
       const err = await res.json()
-      throw new Error(err.error?.message || `GA4 API error ${res.status}`)
+      throw new Error(err.error?.message || 'Sheets API error')
+    }
+    const { values } = await res.json()
+    if (!values || values.length < 2) return NextResponse.json({ rows: [] })
+
+    let lastSeason = '', lastProduct = ''
+    const rows = []
+
+    for (const row of values) {
+      const season  = String(row[0] ?? '').trim()
+      const product = String(row[1] ?? '').trim()
+      const sku     = String(row[2] ?? '').trim()
+
+      if (!sku || sku.toUpperCase() === 'TOTALS' || sku === 'NO_HEADER') continue
+
+      if (season)  lastSeason  = season
+      if (product) lastProduct = product
+
+      rows.push({
+        season:       lastSeason,
+        product_name: lastProduct,
+        sku,
+        stock_row:    num(row[3]),
+        stock_us:     num(row[4]),
+        stock_total:  num(row[5]),
+        sold_row:     num(row[6]),
+        sold_us:      num(row[7]),
+        sold_total:   num(row[8]),
+        weeks_row:    num(row[9]),
+        weeks_us:     num(row[10]),
+        weeks_total:  num(row[11]),
+        cost_row:     num(row[12]),
+        cost_us:      num(row[13]),
+        sell_row:     num(row[14]),
+        sell_us:      num(row[15]),
+      })
     }
 
-    const data = await res.json()
-    const rows = (data.rows || []).map(row => ({
-      product_name:  row.dimensionValues[0]?.value || '',
-      sku:           row.dimensionValues[1]?.value || '',
-      units_sold:    parseInt(row.metricValues[0]?.value  || '0'),
-      revenue:       parseFloat(row.metricValues[1]?.value || '0'),
-    })).filter(r => r.product_name || r.sku)
-
-    return NextResponse.json({ rows, dateRange: { startDate, endDate } })
+    return NextResponse.json({ rows })
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
