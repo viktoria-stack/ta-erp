@@ -476,7 +476,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
       )}
 
       {tab === 'lines' && showSplit && lines.length > 0 && (
-        <SplitCalculator lines={lines} currency={po.currency||'USD'} onClose={()=>setShowSplit(false)} />
+        <SplitCalculator lines={lines} currency={po.currency||'USD'} poId={po.id} onClose={()=>setShowSplit(false)} />
       )}
 
       {tab === 'lines' && (
@@ -504,7 +504,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
                 </tr>
               </thead>
               <tbody>
-                {lines.map((l,i)=>(
+                {[...lines].sort(sizeSort).map((l,i)=>(
                   <tr key={i}>
                     <Td style={{ fontWeight:600 }}>{l.product_name}</Td>
                     <Td><span style={{ background:T.subtle, color:T.text, borderRadius:4, padding:'2px 8px', fontSize:12, fontWeight:700 }}>{l.size}</span></Td>
@@ -554,31 +554,49 @@ const SPLIT_RATIOS = [
   { size: 'XL',  row: 0.21, us: 0.21 },
   { size: 'XXL', row: 0.05, us: 0.09 },
 ]
+const SIZE_ORDER = ['S','M','L','XL','XXL']
+const sizeSort = (a, b) => {
+  const ai = SIZE_ORDER.indexOf(a.size), bi = SIZE_ORDER.indexOf(b.size)
+  if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+  return (a.product_name||'').localeCompare(b.product_name||'')
+}
 const ROW_SPLIT = 0.47
 const US_SPLIT  = 0.53
 
-function SplitCalculator({ lines, currency, onClose }) {
-  const products = [...new Set(lines.map(l => l.product_name))].filter(Boolean)
-  const splitRows = lines.map(l => {
+function SplitCalculator({ lines, currency, poId, onClose }) {
+  const splitRows = [...lines].sort(sizeSort).map(l => {
     const total = (l.qty_uk || 0) + (l.qty_usa || 0)
-    const ratio = SPLIT_RATIOS.find(r => r.size === l.size) || { row: 0.5, us: 0.5 }
     return {
       ...l,
-      split_uk:  Math.round(total * ROW_SPLIT * (ratio.row / (ROW_SPLIT * ratio.row + US_SPLIT * ratio.us || 1)) * (ROW_SPLIT)),
-      split_usa: Math.round(total * US_SPLIT  * (ratio.us / (ROW_SPLIT * ratio.row + US_SPLIT * ratio.us || 1)) * (US_SPLIT)),
-      split_uk2:  Math.round(total * ROW_SPLIT),
-      split_usa2: Math.round(total * US_SPLIT),
+      split_uk:  Math.round(total * ROW_SPLIT),
+      split_usa: Math.round(total * US_SPLIT),
     }
   })
 
-  const totalUK  = splitRows.reduce((s,r) => s + r.split_uk2, 0)
-  const totalUSA = splitRows.reduce((s,r) => s + r.split_usa2, 0)
+  const totalUK  = splitRows.reduce((s,r) => s + r.split_uk,  0)
+  const totalUSA = splitRows.reduce((s,r) => s + r.split_usa, 0)
+
+  const download = () => {
+    const XLSX = require('xlsx')
+    const data = [
+      ['Product Name', 'Size', 'Design Ref', 'Colour', 'SKU', 'Total Units', 'UK (ROW 47%)', 'USA (53%)'],
+      ...splitRows.map(r => [r.product_name, r.size, r.design_ref, r.colour_code, r.sku, (r.qty_uk||0)+(r.qty_usa||0), r.split_uk, r.split_usa]),
+      ['TOTALS', '', '', '', '', totalUK + totalUSA, totalUK, totalUSA],
+    ]
+    const ws = XLSX.utils.aoa_to_sheet(data)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Split')
+    XLSX.writeFile(wb, `${poId}-split.xlsx`)
+  }
 
   return (
     <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:16, marginBottom:16 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
         <div style={{ fontWeight:700, fontSize:14 }}>Warehouse Split (ROW 47% / USA 53%)</div>
-        <button onClick={onClose} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', lineHeight:1 }}>×</button>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={download} style={{ background:T.green, color:'#fff', border:'none', borderRadius:5, padding:'5px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }}>Download Excel</button>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
       </div>
       <div style={{ overflowX:'auto' }}>
         <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
@@ -596,11 +614,11 @@ function SplitCalculator({ lines, currency, onClose }) {
                 <Td style={{ fontWeight:600 }}>{r.product_name}</Td>
                 <Td><span style={{ background:T.subtle, borderRadius:4, padding:'2px 8px', fontSize:11, fontWeight:700 }}>{r.size}</span></Td>
                 <Td style={{ textAlign:'right' }}>{((r.qty_uk||0)+(r.qty_usa||0)).toLocaleString()}</Td>
-                <Td style={{ textAlign:'right', color:'#3b82f6', fontWeight:600 }}>{r.split_uk2.toLocaleString()}</Td>
-                <Td style={{ textAlign:'right', color:'#f59e0b', fontWeight:600 }}>{r.split_usa2.toLocaleString()}</Td>
+                <Td style={{ textAlign:'right', color:'#3b82f6', fontWeight:600 }}>{r.split_uk.toLocaleString()}</Td>
+                <Td style={{ textAlign:'right', color:'#f59e0b', fontWeight:600 }}>{r.split_usa.toLocaleString()}</Td>
               </tr>
             ))}
-            <tr style={{ background:T.surface, borderTop:`2px solid ${T.border}`, fontWeight:800 }}>
+            <tr style={{ background:T.surface, borderTop:`2px solid ${T.border}` }}>
               <Td colSpan={3} style={{ fontWeight:700 }}>TOTALS</Td>
               <Td style={{ textAlign:'right', color:'#3b82f6', fontWeight:800 }}>{totalUK.toLocaleString()}</Td>
               <Td style={{ textAlign:'right', color:'#f59e0b', fontWeight:800 }}>{totalUSA.toLocaleString()}</Td>
