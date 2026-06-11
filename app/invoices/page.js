@@ -438,6 +438,8 @@ function AddModal({ pos, onClose, onSaved }) {
 function EditModal({ invoice, pos, onClose, onSaved }) {
   const [form, setForm] = useState({ ...invoice })
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const save = async () => {
@@ -456,13 +458,41 @@ function EditModal({ invoice, pos, onClose, onSaved }) {
     setSaving(false); onSaved(); onClose()
   }
 
+  const remove = async () => {
+    setDeleting(true)
+    await supabase.from('invoices').delete().eq('id', invoice.id)
+    onSaved(); onClose()
+  }
+
   return (
     <Modal title={`Invoice — ${invoice.invoice_number}`} onClose={onClose} wide>
       <InvoiceForm form={form} set={set} pos={pos} isEdit />
       {invoice.pdf_url && <div style={{ marginTop: 8 }}><a href={invoice.pdf_url} target="_blank" rel="noopener" style={{ color: T.accent, fontSize: 13 }}>📄 View PDF</a></div>}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-        <button onClick={onClose} style={{ background: T.subtle, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '8px 20px', cursor: 'pointer' }}>Cancel</button>
-        <button onClick={save} disabled={saving} style={{ background: T.accent, border: 'none', color: '#fff', borderRadius: 6, padding: '8px 20px', cursor: 'pointer', fontWeight: 700 }}>{saving ? 'Saving…' : 'Save Changes'}</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>
+        <div>
+          {!confirmDelete ? (
+            <button onClick={() => setConfirmDelete(true)}
+              style={{ background: 'transparent', color: T.red, border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+              Delete Invoice
+            </button>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: T.red, fontWeight: 600 }}>Are you sure?</span>
+              <button onClick={remove} disabled={deleting}
+                style={{ background: T.red, color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+                {deleting ? 'Deleting…' : 'Yes, Delete'}
+              </button>
+              <button onClick={() => setConfirmDelete(false)}
+                style={{ background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, borderRadius: 6, padding: '7px 12px', cursor: 'pointer', fontSize: 12 }}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onClose} style={{ background: T.subtle, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '8px 20px', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{ background: T.accent, border: 'none', color: '#fff', borderRadius: 6, padding: '8px 20px', cursor: 'pointer', fontWeight: 700 }}>{saving ? 'Saving…' : 'Save Changes'}</button>
+        </div>
       </div>
     </Modal>
   )
