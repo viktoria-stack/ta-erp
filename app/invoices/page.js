@@ -576,8 +576,8 @@ function BulkImportModal({ onClose, onSaved }) {
       const inProduction = (allPos || []).filter(po => {
         const s = (po.sheet_status || '').toLowerCase()
         const alreadyLinked = linkedPoIds.has(po.id)
-        // Include POs without an invoice yet, that aren't completed
-        return !alreadyLinked && !s.includes('delivered') && !s.includes('booked in')
+        const isTbc = /tbc/i.test(po.id) || /tbc/i.test(po.supplier_name || '')
+        return !alreadyLinked && !isTbc && !s.includes('delivered') && !s.includes('booked in')
       })
       setRows(inProduction.map(po => {
         const dep = parseFloat(po.deposit_cost_value) || 0
