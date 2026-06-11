@@ -63,7 +63,6 @@ export async function GET(req) {
         { name: 'itemRevenue' },
         { name: 'itemsPurchased' },
         { name: 'itemsViewed' },
-        { name: 'addToCarts' },
       ],
       dateRanges: [
         { startDate: `${days}daysAgo`, endDate: 'today', name: 'current' },
@@ -101,25 +100,22 @@ export async function GET(req) {
       const mv = row.metricValues.map(m => parseFloat(m.value) || 0)
       const isCurrent = range === 'current' || range === 'date_range_0'
       if (isCurrent) {
-        grouped[key].revenue     = mv[0]
-        grouped[key].purchased   = mv[1]
-        grouped[key].viewed      = mv[2]
-        grouped[key].add_to_cart = mv[3]
+        grouped[key].revenue   = mv[0]
+        grouped[key].purchased = mv[1]
+        grouped[key].viewed    = mv[2]
       } else {
-        grouped[key].revenue_prev     = mv[0]
-        grouped[key].purchased_prev   = mv[1]
-        grouped[key].viewed_prev      = mv[2]
-        grouped[key].add_to_cart_prev = mv[3]
+        grouped[key].revenue_prev   = mv[0]
+        grouped[key].purchased_prev = mv[1]
+        grouped[key].viewed_prev    = mv[2]
       }
     }
 
     const rows = Object.values(grouped)
       .map(r => ({
         ...r,
-        revenue_prev:       r.revenue_prev     ?? 0,
-        purchased_prev:     r.purchased_prev   ?? 0,
-        viewed_prev:        r.viewed_prev      ?? 0,
-        add_to_cart_prev:   r.add_to_cart_prev ?? 0,
+        revenue_prev:   r.revenue_prev   ?? 0,
+        purchased_prev: r.purchased_prev ?? 0,
+        viewed_prev:    r.viewed_prev    ?? 0,
       }))
       .sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
 

@@ -167,7 +167,6 @@ export default function SalesPage() {
                   <SortTh col="item_id">Item ID / SKU</SortTh>
                   <SortTh col="revenue" right>Revenue</SortTh>
                   <SortTh col="purchased" right>Sold</SortTh>
-                  <SortTh col="add_to_cart" right>Add to Cart</SortTh>
                   <SortTh col="viewed" right>Views</SortTh>
                   <Th style={{ textAlign: 'right' }}>Conv. Rate</Th>
                 </tr>
@@ -193,9 +192,6 @@ export default function SalesPage() {
                     <Td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {r.purchased > 0 ? fmtNum(r.purchased) : <span style={{ color: T.muted }}>—</span>}
                       {r.purchased > 0 && <Delta cur={r.purchased} prev={r.purchased_prev} />}
-                    </Td>
-                    <Td style={{ textAlign: 'right', color: T.muted, fontVariantNumeric: 'tabular-nums' }}>
-                      {r.add_to_cart > 0 ? fmtNum(r.add_to_cart) : <span style={{ color: T.border }}>—</span>}
                     </Td>
                     <Td style={{ textAlign: 'right', color: T.muted, fontVariantNumeric: 'tabular-nums' }}>
                       {r.viewed > 0 ? fmtNum(r.viewed) : <span style={{ color: T.border }}>—</span>}
