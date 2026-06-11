@@ -915,14 +915,28 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
         confirmed_xf: 0,
       }))
 
-    // fill down merged cells: carry last non-empty value for text fields
-    let last = {}
+    // pass 1: fill down
+    let prev = {}
     for (const r of rows) {
-      if (r.product_name) last.product_name = r.product_name; else r.product_name = last.product_name || ''
-      if (r.design_ref)   last.design_ref   = r.design_ref;   else r.design_ref   = last.design_ref   || ''
-      if (r.colour_code)  last.colour_code  = r.colour_code;  else r.colour_code  = last.colour_code  || ''
-      if (r.cost_price)   last.cost_price   = r.cost_price;   else r.cost_price   = last.cost_price   || 0
-      if (r.sku)          last.sku          = r.sku;          else r.sku          = last.sku          || ''
+      if (r.product_name) { prev = { ...r } }
+      else {
+        r.product_name = prev.product_name || ''
+        if (!r.design_ref)  r.design_ref  = prev.design_ref  || ''
+        if (!r.colour_code) r.colour_code = prev.colour_code || ''
+        if (!r.cost_price)  r.cost_price  = prev.cost_price  || 0
+      }
+    }
+    // pass 2: fill up (handles rows before the anchor row in each group)
+    let next = {}
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const r = rows[i]
+      if (r.product_name) { next = { ...r } }
+      else if (next.product_name) {
+        r.product_name = next.product_name
+        if (!r.design_ref)  r.design_ref  = next.design_ref  || ''
+        if (!r.colour_code) r.colour_code = next.colour_code || ''
+        if (!r.cost_price)  r.cost_price  = next.cost_price  || 0
+      }
     }
 
     return rows.filter(r => r.product_name || r.sku || r.design_ref || r.colour_code || r.qty_uk > 0)
