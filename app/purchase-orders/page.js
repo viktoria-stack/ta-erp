@@ -901,7 +901,7 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
     const g = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : ''
     const n = (row, i) => i >= 0 ? (parseFloat(String(row[i] ?? '').replace(/[,\s]/g, '')) || 0) : 0
 
-    return data.slice(headerRowIdx + 1)
+    const rows = data.slice(headerRowIdx + 1)
       .filter(row => row.some(c => c !== null && c !== undefined && c !== ''))
       .map(row => ({
         product_name: g(row, iName),
@@ -914,7 +914,18 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
         qty_usa:      0,
         confirmed_xf: 0,
       }))
-      .filter(r => r.product_name || r.sku || r.design_ref || r.colour_code || r.qty_uk > 0)
+
+    // fill down merged cells: carry last non-empty value for text fields
+    let last = {}
+    for (const r of rows) {
+      if (r.product_name) last.product_name = r.product_name; else r.product_name = last.product_name || ''
+      if (r.design_ref)   last.design_ref   = r.design_ref;   else r.design_ref   = last.design_ref   || ''
+      if (r.colour_code)  last.colour_code  = r.colour_code;  else r.colour_code  = last.colour_code  || ''
+      if (r.cost_price)   last.cost_price   = r.cost_price;   else r.cost_price   = last.cost_price   || 0
+      if (r.sku)          last.sku          = r.sku;          else r.sku          = last.sku          || ''
+    }
+
+    return rows.filter(r => r.product_name || r.sku || r.design_ref || r.colour_code || r.qty_uk > 0)
   }
 
   const handleFile = (file) => {
