@@ -504,7 +504,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
                 </tr>
               </thead>
               <tbody>
-                {[...lines].sort(sizeSort).map((l,i)=>(
+                {sortByProductThenSize(lines).map((l,i)=>(
                   <tr key={i}>
                     <Td style={{ fontWeight:600 }}>{l.product_name}</Td>
                     <Td><span style={{ background:T.subtle, color:T.text, borderRadius:4, padding:'2px 8px', fontSize:12, fontWeight:700 }}>{l.size}</span></Td>
@@ -555,16 +555,23 @@ const SPLIT_RATIOS = [
   { size: 'XXL', row: 0.05, us: 0.09 },
 ]
 const SIZE_ORDER = ['S','M','L','XL','XXL']
-const sizeSort = (a, b) => {
-  const ai = SIZE_ORDER.indexOf(a.size), bi = SIZE_ORDER.indexOf(b.size)
-  if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
-  return (a.product_name||'').localeCompare(b.product_name||'')
+const sortByProductThenSize = (lines) => {
+  const productOrder = []
+  for (const l of lines) {
+    if (l.product_name && !productOrder.includes(l.product_name)) productOrder.push(l.product_name)
+  }
+  return [...lines].sort((a, b) => {
+    const pi = productOrder.indexOf(a.product_name) - productOrder.indexOf(b.product_name)
+    if (pi !== 0) return pi
+    const ai = SIZE_ORDER.indexOf(a.size), bi = SIZE_ORDER.indexOf(b.size)
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+  })
 }
 const ROW_SPLIT = 0.47
 const US_SPLIT  = 0.53
 
 function SplitCalculator({ lines, currency, poId, onClose }) {
-  const splitRows = [...lines].sort(sizeSort).map(l => {
+  const splitRows = sortByProductThenSize(lines).map(l => {
     const total = (l.qty_uk || 0) + (l.qty_usa || 0)
     return {
       ...l,
