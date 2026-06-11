@@ -807,7 +807,15 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
 
   const parseSheet = (sheetName, data) => {
     if (!data || data.length < 2) return []
-    const headers = data[0].map(h => String(h ?? '').trim())
+    // find the header row by scanning up to row 20
+    const headerRx = /product|description|sku|colour|color|size|qty|quantity|cost|design/i
+    let headerRowIdx = 0
+    for (let i = 0; i < Math.min(20, data.length); i++) {
+      const row = data[i] || []
+      const matches = row.filter(c => headerRx.test(String(c ?? '')))
+      if (matches.length >= 2) { headerRowIdx = i; break }
+    }
+    const headers = (data[headerRowIdx] || []).map(h => String(h ?? '').trim())
     let iName    = colMatch(headers, 'product.?name', 'product', 'description', 'item', 'style', 'garment', 'name')
     const iSize    = colMatch(headers, '^size$', 'size')
     const iSku     = colMatch(headers, '^sku$', 'barcode', 'article')
@@ -822,7 +830,7 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
     const g = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : ''
     const n = (row, i) => i >= 0 ? (parseFloat(String(row[i] ?? '').replace(/[,\s]/g, '')) || 0) : 0
 
-    return data.slice(1)
+    return data.slice(headerRowIdx + 1)
       .filter(row => row.some(c => c !== null && c !== undefined && c !== ''))
       .map(row => ({
         product_name: g(row, iName),
