@@ -78,7 +78,7 @@ function InvoiceForm({ form, set, pos, pdf, setPdf, isEdit }) {
         <Field label="Invoice Number" half><input style={inp} value={form.invoice_number || ''} onChange={e => set('invoice_number', e.target.value)} /></Field>
         <Field label="Type" half>
           <select style={sel} value={form.invoice_type || 'supplier'} onChange={e => set('invoice_type', e.target.value)}>
-            <option value="supplier">Supplier (tovar)</option>
+            <option value="supplier">Supplier (goods)</option>
             <option value="freight">Freight</option>
           </select>
         </Field>
@@ -145,7 +145,7 @@ function InvoiceForm({ form, set, pos, pdf, setPdf, isEdit }) {
 
       {!isEdit && (
         <>
-          <Section title="PDF Faktúra" />
+          <Section title="PDF Invoice" />
           <div
             onDragOver={e => e.preventDefault()}
             onDrop={e => { e.preventDefault(); setPdf(e.dataTransfer.files[0]) }}

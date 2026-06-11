@@ -1062,8 +1062,8 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
         <>
           {error && <div style={{ background: '#ef444415', color: '#ef4444', border: '1px solid #ef444430', borderRadius: 6, padding: '10px 14px', marginBottom: 14, fontSize: 13 }}>⚠ {error}</div>}
           <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
-            <strong style={{ color: T.text }}>Format:</strong> každý tab = jeden PO (názov tabu = PO ID)<br />
-            Stĺpce sa detegujú automaticky: product name, size, SKU, colour, cost price, UK qty, USA qty
+            <strong style={{ color: T.text }}>Format:</strong> each tab = one PO (tab name = PO ID)<br />
+            Columns are detected automatically: product name, size, SKU, colour, cost price, UK qty, USA qty
           </div>
           <div
             onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = T.accent }}
@@ -1074,7 +1074,7 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
           >
             <div style={{ fontSize: 36, marginBottom: 10 }}>📊</div>
             <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 6 }}>Drop Excel file or click to browse</div>
-            <div style={{ fontSize: 12, color: T.muted }}>.xlsx alebo .xls</div>
+            <div style={{ fontSize: 12, color: T.muted }}>.xlsx or .xls</div>
             <input id="linesImportInput" type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
           </div>
         </>
@@ -1083,7 +1083,7 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
       {stage === 'preview' && (
         <>
           <div style={{ fontSize: 13, color: T.muted, marginBottom: 14 }}>
-            Nájdených <strong style={{ color: T.text }}>{sheets.length}</strong> tabov s produktmi. Vyber ktoré importovať:
+            Found <strong style={{ color: T.text }}>{sheets.length}</strong> tabs with products. Select which to import:
           </div>
           <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 20 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1091,7 +1091,7 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
                 <tr style={{ background: T.surface }}>
                   <Th style={{ width: 36 }}></Th>
                   <Th>Tab (PO)</Th>
-                  <Th style={{ textAlign: 'right' }}>Produktov</Th>
+                  <Th style={{ textAlign: 'right' }}>Products</Th>
                   <Th>Status</Th>
                 </tr>
               </thead>
@@ -1106,8 +1106,8 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
                     <Td style={{ textAlign: 'right', fontWeight: 700 }}>{s.rows.length}</Td>
                     <Td>
                       {s.matched
-                        ? <span style={{ color: T.green, fontSize: 12, fontWeight: 600 }}>✓ PO nájdené</span>
-                        : <span style={{ color: T.yellow, fontSize: 12 }}>⚠ PO nenájdené — vytvorí sa</span>}
+                        ? <span style={{ color: T.green, fontSize: 12, fontWeight: 600 }}>✓ PO found</span>
+                        : <span style={{ color: T.yellow, fontSize: 12 }}>⚠ PO not found — will be created</span>}
                     </Td>
                   </tr>
                 ))}
@@ -1115,10 +1115,10 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
             </table>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 13, color: T.muted }}>{sheets.filter(s => s.selected).length} tabov · {totalSelected} produktov celkom</span>
+            <span style={{ fontSize: 13, color: T.muted }}>{sheets.filter(s => s.selected).length} tabs · {totalSelected} products total</span>
             <div style={{ display: 'flex', gap: 10 }}>
               <BtnGhost onClick={onClose}>Cancel</BtnGhost>
-              <BtnPrimary onClick={doImport} disabled={totalSelected === 0}>Import {totalSelected} produktov</BtnPrimary>
+              <BtnPrimary onClick={doImport} disabled={totalSelected === 0}>Import {totalSelected} products</BtnPrimary>
             </div>
           </div>
         </>
@@ -1127,7 +1127,7 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
       {stage === 'importing' && (
         <div style={{ textAlign: 'center', padding: '48px 24px' }}>
           <div style={{ width: 36, height: 36, border: `3px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 16px' }} />
-          <div style={{ fontSize: 14, color: T.text }}>Importujem produkty…</div>
+          <div style={{ fontSize: 14, color: T.text }}>Importing products…</div>
           <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
         </div>
       )}
@@ -1139,12 +1139,12 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
                 <span style={{ color: r.ok ? T.green : '#ef4444', fontSize: 16 }}>{r.ok ? '✓' : '✕'}</span>
                 <span style={{ fontFamily: 'monospace', fontWeight: 700, color: T.accent }}>{r.poId}</span>
-                <span style={{ color: r.ok ? T.muted : '#ef4444' }}>{r.ok ? `${r.count} produktov importovaných` : r.msg}</span>
+                <span style={{ color: r.ok ? T.muted : '#ef4444' }}>{r.ok ? `${r.count} products imported` : r.msg}</span>
               </div>
             ))}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <BtnPrimary onClick={onClose}>Hotovo</BtnPrimary>
+            <BtnPrimary onClick={onClose}>Done</BtnPrimary>
           </div>
         </>
       )}
