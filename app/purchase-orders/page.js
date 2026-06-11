@@ -1166,6 +1166,10 @@ function PurchaseOrdersPage() {
   const [view, setView] = useState(searchParams.get('view') === 'pos' ? 'pos' : 'shipments')
   const [dcFilter, setDcFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState('All')
+  const [ffFilter, setFfFilter] = useState('All')
+  const [supplierFilter, setSupplierFilter] = useState('All')
+  const [seasonFilter, setSeasonFilter] = useState('All')
+  const [splitFilter, setSplitFilter] = useState('All')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(null)
   const [splitting, setSplitting] = useState(null)
@@ -1204,13 +1208,20 @@ function PurchaseOrdersPage() {
   const filteredShipments = allShipments.filter(sh=>{
     const matchDC = dcFilter==='All' || sh.dc===dcFilter
     const matchStatus = statusFilter==='All' || sh.status===statusFilter
+    const matchFF = ffFilter==='All' || (sh.freight_forwarder||'—')===ffFilter
+    const matchSupplier = supplierFilter==='All' || (sh.po?.supplier_name||sh.po?.supplier_ref)===supplierFilter
     const matchSearch = !search || sh.shipment_ref?.toLowerCase().includes(search.toLowerCase()) || sh.po?.supplier_name?.toLowerCase().includes(search.toLowerCase()) || sh.po?.id?.toLowerCase().includes(search.toLowerCase())
-    return matchDC && matchStatus && matchSearch
+    return matchDC && matchStatus && matchFF && matchSupplier && matchSearch
   })
 
   const filteredPOs = pos.filter(po => {
+    if (getPoStatus(po) !== 'In production') return false
     const matchSearch = !search || po.id.toLowerCase().includes(search.toLowerCase()) || (po.supplier_name||'').toLowerCase().includes(search.toLowerCase())
-    return matchSearch && getPoStatus(po) === 'In production'
+    const matchSupplier = supplierFilter==='All' || (po.supplier_name||po.supplier_ref)===supplierFilter
+    const matchSeason = seasonFilter==='All' || (po.seasonality||'—')===seasonFilter
+    const isUnsplit = !(po.shipments?.length>0) && !po.po_splits_confirmed
+    const matchSplit = splitFilter==='All' || (splitFilter==='unsplit' ? isUnsplit : !isUnsplit)
+    return matchSearch && matchSupplier && matchSeason && matchSplit
   })
 
   const markSynced = () => {
@@ -1287,6 +1298,12 @@ function PurchaseOrdersPage() {
   }
 
   const inProduction = pos.filter(po => getPoStatus(po) === 'In production').length
+
+  const allSuppliers = [...new Set(pos.map(po => po.supplier_name||po.supplier_ref).filter(Boolean))].sort()
+  const allSeasons   = [...new Set(pos.map(po => po.seasonality).filter(Boolean))].sort()
+  const allFFs       = [...new Set(allShipments.map(sh => sh.freight_forwarder).filter(Boolean))].sort()
+
+  const selStyle = (active) => ({ background:T.surface, border:`1px solid ${active?T.accent:T.border}`, borderRadius:4, padding:'5px 10px', color:active?T.accent:T.muted, fontSize:12, fontWeight:600, cursor:'pointer', outline:'none' })
   const inTransit = allShipments.filter(s=>s.status?.includes('transit')).length
   const bookedIn = allShipments.filter(s=>s.status?.includes('Booked in')||s.status?.includes('Delivered')).length
 
@@ -1325,7 +1342,7 @@ function PurchaseOrdersPage() {
           {/* View toggle */}
           <div style={{ display:'flex', border:`1px solid ${T.border}`, borderRadius:5, overflow:'hidden', marginRight:8 }}>
             {[{id:'shipments',label:'Shipments'},{id:'pos',label:'POs in Production'}].map(v=>(
-              <button key={v.id} onClick={()=>setView(v.id)} style={{ background:view===v.id?T.accent:'transparent', color:view===v.id?'#fff':T.muted, border:'none', padding:'5px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>{v.label}</button>
+              <button key={v.id} onClick={()=>{ setView(v.id); setSupplierFilter('All'); setSeasonFilter('All'); setSplitFilter('All'); setFfFilter('All'); setStatusFilter('All'); setDcFilter('All') }} style={{ background:view===v.id?T.accent:'transparent', color:view===v.id?'#fff':T.muted, border:'none', padding:'5px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>{v.label}</button>
             ))}
           </div>
 
@@ -1334,9 +1351,33 @@ function PurchaseOrdersPage() {
               <button key={d} onClick={()=>setDcFilter(d)} style={{ background:dcFilter===d?(d==='UK'?'#3b82f6':d==='US'?'#8b5cf6':T.accent):T.subtle, color:dcFilter===d?'#fff':T.muted, border:'none', borderRadius:4, padding:'5px 12px', fontSize:12, fontWeight:700, cursor:'pointer' }}>{d}</button>
             ))}
             <div style={{ width:1, height:20, background:T.border }} />
-            <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, padding:'5px 10px', color:statusFilter==='All'?T.muted:T.accent, fontSize:12, fontWeight:600, cursor:'pointer', outline:'none' }}>
+            <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={selStyle(statusFilter!=='All')}>
               <option value="All">All Statuses</option>
               {SHIPMENT_STATUSES.map(s=><option key={s} value={s}>{STATUS_SHORT[s]||s}</option>)}
+            </select>
+            <select value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)} style={selStyle(supplierFilter!=='All')}>
+              <option value="All">All Suppliers</option>
+              {allSuppliers.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={ffFilter} onChange={e=>setFfFilter(e.target.value)} style={selStyle(ffFilter!=='All')}>
+              <option value="All">All Forwarders</option>
+              {allFFs.map(f=><option key={f} value={f}>{f}</option>)}
+            </select>
+          </>}
+
+          {view==='pos' && <>
+            <select value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)} style={selStyle(supplierFilter!=='All')}>
+              <option value="All">All Suppliers</option>
+              {allSuppliers.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={seasonFilter} onChange={e=>setSeasonFilter(e.target.value)} style={selStyle(seasonFilter!=='All')}>
+              <option value="All">All Seasons</option>
+              {allSeasons.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={splitFilter} onChange={e=>setSplitFilter(e.target.value)} style={selStyle(splitFilter!=='All')}>
+              <option value="All">All Split Status</option>
+              <option value="unsplit">Not Split</option>
+              <option value="split">Split</option>
             </select>
           </>}
         </div>
