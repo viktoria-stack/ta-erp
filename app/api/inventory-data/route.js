@@ -89,13 +89,26 @@ function parseSheet(values) {
   return result
 }
 
-export async function GET() {
+export async function GET(req) {
   try {
+    const { searchParams } = new URL(req.url)
+    const debug = searchParams.get('debug') === '1'
+
     const token = await getAccessToken()
     const [rowValues, usValues] = await Promise.all([
       fetchSheet(SHEET_ROW, token),
       fetchSheet(SHEET_US,  token),
     ])
+
+    if (debug) {
+      return NextResponse.json({
+        row_headers: rowValues[0] || [],
+        row_sample:  rowValues.slice(0, 4),
+        us_headers:  usValues[0]  || [],
+        us_sample:   usValues.slice(0, 4),
+      })
+    }
+
     const row = parseSheet(rowValues)
     const us  = parseSheet(usValues)
 
