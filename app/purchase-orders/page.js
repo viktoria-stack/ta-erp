@@ -556,25 +556,32 @@ const SPLIT_RATIOS = [
 ]
 const SIZE_ORDER = ['S','M','L','XL','XXL']
 const sortByProductThenSize = (lines) => {
-  // fill missing product_name in both directions (handles merged cells saved as empty)
-  const filled = lines.map(l => ({ ...l }))
-  let prev = ''
-  for (const r of filled)       { if (r.product_name?.trim()) prev = r.product_name; else r.product_name = prev }
-  let next = ''
-  for (let i = filled.length - 1; i >= 0; i--) {
-    if (filled[i].product_name?.trim()) next = filled[i].product_name; else filled[i].product_name = next
+  // group key: SKU without size suffix (e.g. PPK00131-S → PPK00131), fallback to product_name
+  const getGroup = l => l.sku ? l.sku.replace(/-[^-]+$/, '').trim() : (l.product_name || '').trim()
+  const groupOrder = []
+  for (const l of lines) {
+    const g = getGroup(l)
+    if (g && !groupOrder.includes(g)) groupOrder.push(g)
   }
-  // build product order from first occurrence
-  const productOrder = []
-  for (const l of filled) {
-    if (l.product_name && !productOrder.includes(l.product_name)) productOrder.push(l.product_name)
-  }
-  return filled.sort((a, b) => {
-    const pi = productOrder.indexOf(a.product_name) - productOrder.indexOf(b.product_name)
+  const sorted = [...lines].sort((a, b) => {
+    const pi = groupOrder.indexOf(getGroup(a)) - groupOrder.indexOf(getGroup(b))
     if (pi !== 0) return pi
     const ai = SIZE_ORDER.indexOf(a.size), bi = SIZE_ORDER.indexOf(b.size)
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
   })
+  // fill product_name / design_ref / colour_code within now-contiguous groups
+  let prev = {}
+  for (const r of sorted) {
+    if (r.product_name?.trim()) prev = r
+    else { r.product_name = prev.product_name || ''; r.design_ref = r.design_ref || prev.design_ref || ''; r.colour_code = r.colour_code || prev.colour_code || '' }
+  }
+  let next = {}
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const r = sorted[i]
+    if (r.product_name?.trim()) next = r
+    else { r.product_name = next.product_name || ''; r.design_ref = r.design_ref || next.design_ref || ''; r.colour_code = r.colour_code || next.colour_code || '' }
+  }
+  return sorted
 }
 const ROW_SPLIT = 0.47
 const US_SPLIT  = 0.53
