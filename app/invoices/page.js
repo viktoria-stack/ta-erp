@@ -164,66 +164,94 @@ function InvoiceForm({ form, set, pos, pdf, setPdf, isEdit }) {
 }
 
 // ─── UPLOAD & PARSE MODAL ──────────────────────────────────────
+const MONTHS_MAP = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'}
+
+function normalizeDate(s) {
+  if (!s) return null
+  s = s.trim()
+  // DD/MM/YYYY or MM/DD/YYYY (assume DD/MM for supplier invoices)
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
+  if (dmy) { const y = dmy[3].length === 2 ? '20' + dmy[3] : dmy[3]; return `${y}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}` }
+  // DD-Mon-YYYY e.g. 20-Feb-2025
+  const dmon = s.match(/^(\d{1,2})[\/\-]([A-Za-z]{3})[\/\-](\d{2,4})$/)
+  if (dmon) { const m = MONTHS_MAP[dmon[2].toLowerCase()]; if (m) { const y = dmon[3].length === 2 ? '20' + dmon[3] : dmon[3]; return `${y}-${m}-${dmon[1].padStart(2,'0')}` } }
+  // Native parse fallback
+  const d = new Date(s); if (!isNaN(d)) return d.toISOString().slice(0, 10)
+  return null
+}
+
 function parseInvoiceText(raw) {
   const t = raw.replace(/\s+/g, ' ')
-  const get = (...pats) => { for (const p of pats) { const m = t.match(p); if (m?.[1]) return m[1].trim() } return null }
-  const cleanAmt = s => s ? parseFloat(s.replace(/[,\s]/g, '')) || null : null
-  const cleanDate = s => {
-    if (!s) return null
-    const dmy = s.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
-    if (dmy) { const y = dmy[3].length === 2 ? '20' + dmy[3] : dmy[3]; return `${y}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}` }
-    const d = new Date(s.trim()); if (!isNaN(d)) return d.toISOString().slice(0, 10)
+
+  // Scan 25 chars forward from a keyword for a financial amount.
+  // Requires currency symbol, comma-thousands, or 5+ digits — avoids date components.
+  const findAmt = (...kwds) => {
+    for (const kw of kwds) {
+      const i = t.toLowerCase().indexOf(kw.toLowerCase())
+      if (i < 0) continue
+      const slice = t.slice(i + kw.length, i + kw.length + 25)
+      const cm = slice.match(/[$£€]\s*([\d,]+\.?\d{0,2})/)
+      if (cm) return parseFloat(cm[1].replace(/,/g, '')) || null
+      const mm = slice.match(/([\d]{1,3}(?:,\d{3})+\.?\d{0,2})/)
+      if (mm) return parseFloat(mm[1].replace(/,/g, '')) || null
+      const lm = slice.match(/(\d{5,})(?![\/\-\d])/)
+      if (lm) return parseFloat(lm[1]) || null
+    }
     return null
   }
 
+  // Scan forward from a keyword to find the next date (within 40 chars)
+  const DATE_RX = /(\d{1,2}[\/\-][A-Za-z\d]{2,4}[\/\-]\d{2,4})/
+  const findDate = (...kwds) => {
+    for (const kw of kwds) {
+      const i = t.toLowerCase().indexOf(kw.toLowerCase())
+      if (i < 0) continue
+      const m = t.slice(i + kw.length, i + kw.length + 40).match(DATE_RX)
+      if (m) { const r = normalizeDate(m[1]); if (r) return r }
+    }
+    return null
+  }
+
+  // Currency
   let currency = 'USD'
   if (/£|\bGBP\b/.test(t)) currency = 'GBP'
   else if (/€|\bEUR\b/.test(t)) currency = 'EUR'
 
-  const totalStr = get(
-    /(?:grand\s+)?total\s+(?:amount\s+)?(?:due\s+)?:?\s*[$£€]?\s*([\d,]+\.?\d{0,2})/i,
-    /amount\s+due:?\s*[$£€]?\s*([\d,]+\.?\d{0,2})/i
-  )
-  const total = cleanAmt(totalStr)
+  // Totals
+  const total = findAmt('grand total', 'total amount', 'amount due', 'total due', 'total:')
 
-  const depStr = get(
-    /deposit\s+(?:amount\s+)?:?\s*[$£€]?\s*([\d,]+\.?\d{0,2})/i,
-    /down\s+payment:?\s*[$£€]?\s*([\d,]+\.?\d{0,2})/i
-  )
-  let deposit_amount = cleanAmt(depStr)
+  // Deposit
+  let deposit_amount = findAmt('deposit amount', 'deposit:', 'down payment')
   if (!deposit_amount && total) {
     const pct = t.match(/(\d{1,2})%\s*deposit/i)
     if (pct) deposit_amount = Math.round(total * parseInt(pct[1]) / 100 * 100) / 100
   }
 
-  const balStr = get(
-    /balance\s+(?:due\s+)?(?:amount\s+)?:?\s*[$£€]?\s*([\d,]+\.?\d{0,2})/i,
-    /remaining\s+(?:balance\s+)?:?\s*[$£€]?\s*([\d,]+\.?\d{0,2})/i
-  )
-  let balance_amount = cleanAmt(balStr)
+  // Balance
+  let balance_amount = findAmt('balance amount', 'balance due', 'balance:', 'remaining balance', 'remaining:')
   if (!balance_amount && total && deposit_amount) balance_amount = Math.round((total - deposit_amount) * 100) / 100
   else if (!balance_amount && total) balance_amount = total
 
-  return {
-    invoice_number: get(
-      /invoice\s*(?:number|no\.?|num\.?|#):?\s*([A-Z0-9][A-Z0-9\-\/\.]{2,20})/i,
-      /\bINV[-\s]?([A-Z0-9\-]{3,20})\b/i
-    ) || null,
-    invoice_date: cleanDate(get(
-      /invoice\s*date:?\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
-      /(?:issue\s+)?date:?\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i
-    )),
-    currency,
-    deposit_amount: deposit_amount || null,
-    deposit_due_date: cleanDate(get(/deposit\s+due:?\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)),
-    balance_amount: balance_amount || null,
-    balance_due_date: cleanDate(get(
-      /balance\s+due:?\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
-      /due\s+(?:date|by|on):?\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
-      /payment\s+due:?\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i
-    )),
-    payment_terms: get(/payment\s+terms?:?\s+([^\n.]{5,80})/i) || null,
-  }
+  // Invoice number
+  const numPats = [
+    /invoice\s*(?:number|no\.?|num\.?|#)\s*:?\s*([A-Z0-9][A-Z0-9\-\/\.]{2,20})/i,
+    /\bINV[-\s#]?([A-Z0-9\-\/\.]{3,20})\b/i,
+    /bill\s*(?:number|no\.?|#)\s*:?\s*([A-Z0-9\-\/]{3,20})/i,
+  ]
+  const invoice_number = (() => { for (const p of numPats) { const m = t.match(p); if (m?.[1]) return m[1].trim() } return null })()
+
+  // Dates
+  const invoice_date = findDate('invoice date:', 'invoice date', 'issue date:', 'date:')
+  const deposit_due_date = findDate('deposit due:', 'deposit due date:', 'deposit payment date:')
+  const balance_due_date = findDate('balance due:', 'balance due date:', 'due date:', 'payment due:', 'due by:', 'due on:')
+
+  // Payment terms — stop at the first known field label or 80 chars
+  const termsM = t.match(/payment\s+terms?\s*:?\s*([^.;\n]{5,80})/i)
+  const termsRaw = termsM?.[1]?.trim().replace(/\s{2,}/g, ' ') || null
+  const termsStop = termsRaw ? termsRaw.search(/\b(?:deposit\s+due|balance\s+due|due\s+date|payment\s+due|total|invoice\s+no)/i) : -1
+  const payment_terms = termsRaw ? (termsStop > 5 ? termsRaw.slice(0, termsStop).trim().replace(/\s*\d+%?\s*$/, '') : termsRaw) : null
+
+  return { invoice_number, invoice_date, currency, deposit_amount: deposit_amount || null, deposit_due_date, balance_amount: balance_amount || null, balance_due_date, payment_terms }
 }
 
 function UploadModal({ pos, onClose, onSaved }) {
