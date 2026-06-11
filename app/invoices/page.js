@@ -556,6 +556,162 @@ function CashflowView({ invoices }) {
   )
 }
 
+// ─── BULK IMPORT MODAL ────────────────────────────────────────
+function BulkImportModal({ onClose, onSaved }) {
+  const [rows, setRows]       = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState('')
+  const [done, setDone]       = useState(null)
+
+  useEffect(() => {
+    const load = async () => {
+      const [{ data: allPos }, { data: existingInvs }] = await Promise.all([
+        supabase.from('purchase_orders').select('id, supplier_name, currency, total_cost_value, deposit_cost_value, deposit_payment_date, ex_factory_date, sheet_status').order('id'),
+        supabase.from('invoices').select('po_id').not('po_id', 'is', null),
+      ])
+      const linkedPoIds = new Set((existingInvs || []).map(i => i.po_id))
+      const inProduction = (allPos || []).filter(po => {
+        const s = (po.sheet_status || '').toLowerCase()
+        const alreadyLinked = linkedPoIds.has(po.id)
+        // Include POs without an invoice yet, that aren't completed
+        return !alreadyLinked && !s.includes('delivered') && !s.includes('booked in')
+      })
+      setRows(inProduction.map(po => {
+        const dep = parseFloat(po.deposit_cost_value) || 0
+        const total = parseFloat(po.total_cost_value) || 0
+        const balance = Math.round((total - dep) * 100) / 100
+        return {
+          selected: true,
+          po_id: po.id,
+          supplier_name: po.supplier_name || '',
+          currency: po.currency || 'USD',
+          invoice_number: `INV-${po.id}`,
+          deposit_amount: dep,
+          deposit_paid_date: po.deposit_payment_date || '',
+          balance_amount: balance > 0 ? balance : 0,
+          balance_due_date: po.ex_factory_date || '',
+          total,
+        }
+      }))
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const upd = (i, field, val) => setRows(r => r.map((row, idx) => idx === i ? { ...row, [field]: val } : row))
+
+  const create = async () => {
+    const selected = rows.filter(r => r.selected)
+    if (!selected.length) return
+    setSaving(true); setError('')
+    try {
+      const records = selected.map(r => ({
+        invoice_number:    r.invoice_number,
+        invoice_type:      'supplier',
+        supplier_name:     r.supplier_name,
+        currency:          r.currency,
+        invoice_date:      today(),
+        po_id:             r.po_id,
+        deposit_amount:    r.deposit_amount,
+        deposit_paid_date: r.deposit_paid_date || null,
+        balance_amount:    r.balance_amount,
+        balance_due_date:  r.balance_due_date || null,
+        amount:            r.deposit_amount + r.balance_amount,
+      }))
+      const { error: dbErr } = await supabase.from('invoices').insert(records)
+      if (dbErr) throw new Error(dbErr.message)
+      setDone(records.length)
+      onSaved()
+    } catch (e) { setError(e.message) }
+    setSaving(false)
+  }
+
+  const inp = { background: T.subtle, border: `1px solid ${T.border}`, borderRadius: 4, padding: '4px 7px', color: T.text, fontSize: 12, outline: 'none' }
+  const selectedCount = rows.filter(r => r.selected).length
+
+  return (
+    <Modal title="Bulk Import Invoices from POs" onClose={onClose} wide>
+      {loading ? (
+        <div style={{ padding: '40px 0', textAlign: 'center', color: T.muted }}>Loading POs…</div>
+      ) : done != null ? (
+        <div style={{ textAlign: 'center', padding: '40px 0' }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>✓</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: T.green, marginBottom: 8 }}>{done} invoice{done !== 1 ? 's' : ''} created</div>
+          <button onClick={onClose} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 24px', fontWeight: 700, cursor: 'pointer', fontSize: 13, marginTop: 8 }}>Done</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ background: T.subtle, borderRadius: 6, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: T.muted }}>
+            Showing POs <strong style={{ color: T.text }}>without an existing invoice</strong> and not yet delivered. Deposit is pre-filled from PO data. Balance due date = Ex-Factory date.
+          </div>
+          {error && <div style={{ background: '#ef444415', color: '#ef4444', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 13 }}>{error}</div>}
+
+          {rows.length === 0 ? (
+            <div style={{ padding: '32px 0', textAlign: 'center', color: T.muted, fontSize: 13 }}>All POs in production already have invoices linked.</div>
+          ) : (
+            <>
+              <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: T.surface }}>
+                      <Th style={{ width: 32 }}>
+                        <input type="checkbox" checked={rows.every(r => r.selected)} onChange={e => setRows(r => r.map(row => ({ ...row, selected: e.target.checked })))} />
+                      </Th>
+                      <Th>PO</Th>
+                      <Th>Supplier</Th>
+                      <Th>CCY</Th>
+                      <Th>Invoice #</Th>
+                      <Th style={{ textAlign: 'right' }}>Deposit</Th>
+                      <Th>Dep. Paid</Th>
+                      <Th style={{ textAlign: 'right' }}>Balance</Th>
+                      <Th>Balance Due</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={r.po_id} style={{ borderBottom: `1px solid ${T.border}`, opacity: r.selected ? 1 : 0.4 }}>
+                        <Td><input type="checkbox" checked={r.selected} onChange={e => upd(i, 'selected', e.target.checked)} /></Td>
+                        <Td style={{ fontFamily: 'monospace', fontWeight: 700, color: T.accent, whiteSpace: 'nowrap' }}>{r.po_id}</Td>
+                        <Td style={{ fontWeight: 600 }}>{r.supplier_name}</Td>
+                        <Td style={{ color: T.muted }}>{r.currency}</Td>
+                        <Td>
+                          <input value={r.invoice_number} onChange={e => upd(i, 'invoice_number', e.target.value)} style={{ ...inp, width: 140 }} />
+                        </Td>
+                        <Td style={{ textAlign: 'right', color: T.yellow, fontWeight: 600 }}>
+                          {r.deposit_amount > 0 ? fmt(r.deposit_amount, r.currency) : <span style={{ color: T.muted }}>—</span>}
+                        </Td>
+                        <Td>
+                          <input type="date" value={r.deposit_paid_date} onChange={e => upd(i, 'deposit_paid_date', e.target.value)} style={{ ...inp, width: 120 }} title="Leave blank if not yet paid" />
+                        </Td>
+                        <Td style={{ textAlign: 'right', color: T.blue, fontWeight: 600 }}>
+                          {r.balance_amount > 0 ? fmt(r.balance_amount, r.currency) : <span style={{ color: T.muted }}>—</span>}
+                        </Td>
+                        <Td>
+                          <input type="date" value={r.balance_due_date} onChange={e => upd(i, 'balance_due_date', e.target.value)} style={{ ...inp, width: 120 }} />
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: T.muted }}>{selectedCount} of {rows.length} POs selected</span>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={onClose} style={{ background: T.subtle, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 6, padding: '8px 18px', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+                  <button onClick={create} disabled={saving || selectedCount === 0} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 700, cursor: 'pointer', fontSize: 13, opacity: selectedCount === 0 ? 0.5 : 1 }}>
+                    {saving ? 'Creating…' : `Create ${selectedCount} Invoice${selectedCount !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </Modal>
+  )
+}
+
 // ─── MAIN PAGE ─────────────────────────────────────────────────
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState([])
@@ -564,6 +720,7 @@ export default function InvoicesPage() {
   const [tab, setTab] = useState('invoices')
   const [showAdd, setShowAdd] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
+  const [showBulk, setShowBulk] = useState(false)
   const [selected, setSelected] = useState(null)
   const [pdfViewer, setPdfViewer] = useState(null)
   const [statusFilter, setStatusFilter] = useState('All')
@@ -601,6 +758,7 @@ export default function InvoicesPage() {
     <Shell title="Invoices">
       {showAdd && <AddModal pos={pos} onClose={() => setShowAdd(false)} onSaved={load} />}
       {showUpload && <UploadModal pos={pos} onClose={() => setShowUpload(false)} onSaved={load} />}
+      {showBulk && <BulkImportModal onClose={() => setShowBulk(false)} onSaved={load} />}
       {selected && <EditModal invoice={selected} pos={pos} onClose={() => setSelected(null)} onSaved={load} />}
 
       {pdfViewer && (
@@ -631,6 +789,7 @@ export default function InvoicesPage() {
           ))}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setShowBulk(true)} style={{ background: T.subtle, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 18px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>⬇ Import from POs</button>
           <button onClick={() => setShowUpload(true)} style={{ background: T.subtle, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 18px', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>⬆ Upload Invoice</button>
           <button onClick={() => setShowAdd(true)} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>+ Add Invoice</button>
         </div>
