@@ -556,11 +556,20 @@ const SPLIT_RATIOS = [
 ]
 const SIZE_ORDER = ['S','M','L','XL','XXL']
 const sortByProductThenSize = (lines) => {
+  // fill missing product_name in both directions (handles merged cells saved as empty)
+  const filled = lines.map(l => ({ ...l }))
+  let prev = ''
+  for (const r of filled)       { if (r.product_name?.trim()) prev = r.product_name; else r.product_name = prev }
+  let next = ''
+  for (let i = filled.length - 1; i >= 0; i--) {
+    if (filled[i].product_name?.trim()) next = filled[i].product_name; else filled[i].product_name = next
+  }
+  // build product order from first occurrence
   const productOrder = []
-  for (const l of lines) {
+  for (const l of filled) {
     if (l.product_name && !productOrder.includes(l.product_name)) productOrder.push(l.product_name)
   }
-  return [...lines].sort((a, b) => {
+  return filled.sort((a, b) => {
     const pi = productOrder.indexOf(a.product_name) - productOrder.indexOf(b.product_name)
     if (pi !== 0) return pi
     const ai = SIZE_ORDER.indexOf(a.size), bi = SIZE_ORDER.indexOf(b.size)
