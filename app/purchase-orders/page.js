@@ -808,15 +808,17 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
   const parseSheet = (sheetName, data) => {
     if (!data || data.length < 2) return []
     const headers = data[0].map(h => String(h ?? '').trim())
-    const iName    = colMatch(headers, 'product', 'description', 'item', 'style', 'garment', 'name')
+    let iName    = colMatch(headers, 'product', 'description', 'item', 'style', 'garment', 'name')
     const iSize    = colMatch(headers, '^size$', 'size')
     const iSku     = colMatch(headers, '^sku', 'barcode', 'article')
     const iDesign  = colMatch(headers, 'design', 'style.?ref', 'style.?no', 'ref.?no')
-    const iColour  = colMatch(headers, 'colou?r')
+    const iColour  = colMatch(headers, 'colou?r', 'colour')
     const iCost    = colMatch(headers, 'cost', 'unit.?price', '^price')
-    const iUK      = colMatch(headers, 'qty.?uk', 'uk.?qty', '^uk$', 'gb.?qty', 'qty.?gb')
-    const iUS      = colMatch(headers, 'qty.?us', 'us.?qty', '^us[a]?$', 'usa.?qty', 'qty.?usa')
+    const iUK      = colMatch(headers, 'qty.?uk', 'uk.?qty', '^uk$', 'gb.?qty', 'qty.?gb', 'uk')
+    const iUS      = colMatch(headers, 'qty.?us', 'us.?qty', '^us[a]?$', 'usa.?qty', 'qty.?usa', 'usa', '^us$')
     const iXF      = colMatch(headers, 'confirmed', 'xf', 'ex.?factory', 'approved')
+    // fall back to column 0 if no name column detected
+    if (iName < 0) iName = 0
     const g = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : ''
     const n = (row, i) => i >= 0 ? (parseFloat(String(row[i] ?? '').replace(/[,\s]/g, '')) || 0) : 0
 
@@ -833,7 +835,7 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
         qty_usa:      n(row, iUS),
         confirmed_xf: n(row, iXF),
       }))
-      .filter(r => r.product_name || r.sku)
+      .filter(r => r.product_name || r.sku || r.design_ref || r.colour_code || r.qty_uk > 0 || r.qty_usa > 0)
   }
 
   const handleFile = (file) => {
@@ -850,7 +852,15 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
           const poId = pos.find(p => p.id === base)?.id || pos.find(p => p.id === name.trim())?.id || base
           return { sheetName: name, poId, rows: parseSheet(name, data), matched, selected: matched }
         }).filter(s => s.rows.length > 0)
-        if (parsed.length === 0) { setError('No product rows found in any sheet'); return }
+        if (parsed.length === 0) {
+          const allHeaders = wb.SheetNames.map(name => {
+            const data = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null })
+            const hdrs = (data[0] || []).map(h => String(h ?? '').trim()).filter(Boolean)
+            return `${name}: [${hdrs.join(', ')}]`
+          }).join(' | ')
+          setError(`No product rows found. Headers detected — ${allHeaders}`)
+          return
+        }
         setSheets(parsed)
         setStage('preview')
       } catch (err) { setError('Could not read file: ' + err.message) }
