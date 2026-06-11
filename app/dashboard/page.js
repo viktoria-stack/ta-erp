@@ -205,7 +205,7 @@ export default function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10, marginBottom: 20 }}>
         <KPIBox label="Total POs" value={pos.length} onClick={() => router.push('/purchase-orders')} />
         <KPIBox label="⚠ Unsplit" value={unsplitPOs.length} color={unsplitPOs.length > 0 ? T.yellow : T.muted} onClick={() => router.push('/purchase-orders')} />
-        <KPIBox label="In Production" value={inProductionPOs.length} color={T.yellow} onClick={() => router.push('/purchase-orders')} />
+        <KPIBox label="In Production" value={inProductionPOs.length} color={T.yellow} onClick={() => router.push('/purchase-orders?view=pos')} />
         <KPIBox label="In Transit" value={inTransit.length} color={T.blue} onClick={() => router.push('/purchase-orders')} />
         <KPIBox label="Booked In" value={bookedIn.length} color={T.green} onClick={() => router.push('/purchase-orders')} />
         <KPIBox label="🇬🇧 UK Stock" value={totalUK.toLocaleString()} color="#3b82f6" onClick={() => router.push('/inventory')} />

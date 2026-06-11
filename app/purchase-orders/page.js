@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import Shell from '@/components/Shell'
 import { T, KPI, Card, Badge, Th, Td, Input, BtnPrimary, BtnGhost, Modal, CURRENCIES, fmt, Loading, ErrorMsg } from '@/components/ui'
@@ -794,11 +795,12 @@ function ImportModal({ onClose, onSaved }) {
 
 // ─── MAIN PAGE ────────────────────────────────────────────────
 export default function PurchaseOrdersPage() {
+  const searchParams = useSearchParams()
   const [pos, setPos] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [view, setView] = useState('shipments') // 'shipments' | 'pos'
+  const [view, setView] = useState(searchParams.get('view') === 'pos' ? 'pos' : 'shipments')
   const [dcFilter, setDcFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState('All')
   const [search, setSearch] = useState('')
