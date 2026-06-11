@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import Shell from '@/components/Shell'
@@ -794,7 +794,11 @@ function ImportModal({ onClose, onSaved }) {
 }
 
 // ─── MAIN PAGE ────────────────────────────────────────────────
-export default function PurchaseOrdersPage() {
+export default function Page() {
+  return <Suspense fallback={<Shell title="Purchase Orders"><Loading /></Shell>}><PurchaseOrdersPage /></Suspense>
+}
+
+function PurchaseOrdersPage() {
   const searchParams = useSearchParams()
   const [pos, setPos] = useState([])
   const [suppliers, setSuppliers] = useState([])
