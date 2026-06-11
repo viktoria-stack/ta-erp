@@ -847,9 +847,10 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
         const wb = XLSX.read(e.target.result, { type: 'binary' })
         const parsed = wb.SheetNames.map(name => {
           const data = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null })
-          const { base } = parsePORef(name)
-          const matched = pos.some(p => p.id === base || p.id === name.trim())
-          const poId = pos.find(p => p.id === base)?.id || pos.find(p => p.id === name.trim())?.id || base
+          const short = name.trim().slice(0, 6)
+          const { base } = parsePORef(short)
+          const matched = pos.some(p => p.id === base || p.id === short)
+          const poId = pos.find(p => p.id === base)?.id || pos.find(p => p.id === short)?.id || base
           return { sheetName: name, poId, rows: parseSheet(name, data), matched, selected: matched }
         }).filter(s => s.rows.length > 0)
         if (parsed.length === 0) {
