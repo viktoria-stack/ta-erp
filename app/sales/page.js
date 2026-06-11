@@ -34,6 +34,7 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError]   = useState('')
   const [days, setDays]     = useState(7)
+  const [customDays, setCustomDays] = useState('')
   const [search, setSearch] = useState('')
   const [sortCol, setSortCol] = useState('revenue')
   const [sortAsc, setSortAsc] = useState(false)
@@ -96,16 +97,42 @@ export default function SalesPage() {
           <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: 26, letterSpacing: '-0.3px', color: T.text }}>Sales Dashboard</div>
           <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Google Analytics 4 · Top products</div>
         </div>
-        <div style={{ display: 'flex', gap: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: 3 }}>
-          {RANGES.map(r => (
-            <button key={r.days} onClick={() => setDays(r.days)} style={{
-              background: days === r.days ? T.accent : 'transparent',
-              color: days === r.days ? '#fff' : T.muted,
-              border: 'none', borderRadius: 5, padding: '5px 14px',
-              fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              transition: 'background 0.15s, color 0.15s',
-            }}>{r.label}</button>
-          ))}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: 3 }}>
+            {RANGES.map(r => (
+              <button key={r.days} onClick={() => { setDays(r.days); setCustomDays('') }} style={{
+                background: days === r.days && !customDays ? T.accent : 'transparent',
+                color: days === r.days && !customDays ? '#fff' : T.muted,
+                border: 'none', borderRadius: 5, padding: '5px 14px',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                transition: 'background 0.15s, color 0.15s',
+              }}>{r.label}</button>
+            ))}
+          </div>
+          <form onSubmit={e => {
+            e.preventDefault()
+            const n = parseInt(customDays)
+            if (n > 0 && n <= 365) setDays(n)
+          }} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <input
+              type="number" min="1" max="365"
+              value={customDays}
+              onChange={e => setCustomDays(e.target.value)}
+              placeholder="Custom"
+              style={{
+                width: 80, background: customDays ? T.surface : 'transparent',
+                border: `1px solid ${customDays ? T.accent : T.border}`,
+                borderRadius: 6, padding: '5px 8px', color: T.text, fontSize: 12,
+                outline: 'none', textAlign: 'center',
+              }}
+            />
+            {customDays && (
+              <button type="submit" style={{
+                background: T.accent, color: '#fff', border: 'none',
+                borderRadius: 5, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              }}>Go</button>
+            )}
+          </form>
         </div>
       </div>
 
