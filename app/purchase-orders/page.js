@@ -793,6 +793,188 @@ function ImportModal({ onClose, onSaved }) {
   )
 }
 
+// ─── IMPORT LINES MODAL ───────────────────────────────────────
+function ImportLinesModal({ pos, onClose, onSaved }) {
+  const [stage, setStage] = useState('drop') // drop | preview | importing | done
+  const [sheets, setSheets] = useState([])   // [{ poId, rows, matched, selected }]
+  const [results, setResults] = useState(null)
+  const [error, setError] = useState('')
+
+  const colMatch = (headers, ...pats) => {
+    const rx = new RegExp(pats.join('|'), 'i')
+    return headers.findIndex(h => rx.test(String(h).trim()))
+  }
+
+  const parseSheet = (sheetName, data) => {
+    if (!data || data.length < 2) return []
+    const headers = data[0].map(h => String(h ?? '').trim())
+    const iName    = colMatch(headers, 'product', 'description', 'item', 'style', 'garment', 'name')
+    const iSize    = colMatch(headers, '^size$', 'size')
+    const iSku     = colMatch(headers, '^sku', 'barcode', 'article')
+    const iDesign  = colMatch(headers, 'design', 'style.?ref', 'style.?no', 'ref.?no')
+    const iColour  = colMatch(headers, 'colou?r')
+    const iCost    = colMatch(headers, 'cost', 'unit.?price', '^price')
+    const iUK      = colMatch(headers, 'qty.?uk', 'uk.?qty', '^uk$', 'gb.?qty', 'qty.?gb')
+    const iUS      = colMatch(headers, 'qty.?us', 'us.?qty', '^us[a]?$', 'usa.?qty', 'qty.?usa')
+    const iXF      = colMatch(headers, 'confirmed', 'xf', 'ex.?factory', 'approved')
+    const g = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : ''
+    const n = (row, i) => i >= 0 ? (parseFloat(String(row[i] ?? '').replace(/[,\s]/g, '')) || 0) : 0
+
+    return data.slice(1)
+      .filter(row => row.some(c => c !== null && c !== undefined && c !== ''))
+      .map(row => ({
+        product_name: g(row, iName),
+        size:         g(row, iSize) || 'M',
+        sku:          g(row, iSku),
+        design_ref:   g(row, iDesign),
+        colour_code:  g(row, iColour),
+        cost_price:   n(row, iCost),
+        qty_uk:       n(row, iUK),
+        qty_usa:      n(row, iUS),
+        confirmed_xf: n(row, iXF),
+      }))
+      .filter(r => r.product_name || r.sku)
+  }
+
+  const handleFile = (file) => {
+    if (!file) return
+    setError('')
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'binary' })
+        const parsed = wb.SheetNames.map(name => {
+          const data = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null })
+          const { base } = parsePORef(name)
+          const matched = pos.some(p => p.id === base || p.id === name.trim())
+          const poId = pos.find(p => p.id === base)?.id || pos.find(p => p.id === name.trim())?.id || base
+          return { sheetName: name, poId, rows: parseSheet(name, data), matched, selected: matched }
+        }).filter(s => s.rows.length > 0)
+        if (parsed.length === 0) { setError('No product rows found in any sheet'); return }
+        setSheets(parsed)
+        setStage('preview')
+      } catch (err) { setError('Could not read file: ' + err.message) }
+    }
+    reader.readAsBinaryString(file)
+  }
+
+  const toggleSelect = (i) => setSheets(prev => prev.map((s, idx) => idx === i ? { ...s, selected: !s.selected } : s))
+
+  const doImport = async () => {
+    setStage('importing')
+    const selected = sheets.filter(s => s.selected)
+    const res = []
+    for (const s of selected) {
+      try {
+        await supabase.from('po_lines').delete().eq('po_id', s.poId)
+        const { error } = await supabase.from('po_lines').insert(s.rows.map(r => ({ ...r, po_id: s.poId })))
+        if (error) res.push({ poId: s.poId, ok: false, msg: error.message })
+        else res.push({ poId: s.poId, ok: true, count: s.rows.length })
+      } catch (err) { res.push({ poId: s.poId, ok: false, msg: err.message }) }
+    }
+    setResults(res)
+    setStage('done')
+    onSaved()
+  }
+
+  const totalSelected = sheets.filter(s => s.selected).reduce((n, s) => n + s.rows.length, 0)
+
+  return (
+    <Modal title="Import Products from Excel" width={800} onClose={onClose}>
+      {stage === 'drop' && (
+        <>
+          {error && <div style={{ background: '#ef444415', color: '#ef4444', border: '1px solid #ef444430', borderRadius: 6, padding: '10px 14px', marginBottom: 14, fontSize: 13 }}>⚠ {error}</div>}
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '12px 16px', marginBottom: 16, fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
+            <strong style={{ color: T.text }}>Format:</strong> každý tab = jeden PO (názov tabu = PO ID)<br />
+            Stĺpce sa detegujú automaticky: product name, size, SKU, colour, cost price, UK qty, USA qty
+          </div>
+          <div
+            onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = T.accent }}
+            onDragLeave={e => { e.currentTarget.style.borderColor = T.border }}
+            onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = T.border; handleFile(e.dataTransfer.files[0]) }}
+            onClick={() => document.getElementById('linesImportInput').click()}
+            style={{ border: `2px dashed ${T.border}`, borderRadius: 10, padding: '48px 24px', textAlign: 'center', cursor: 'pointer', transition: 'border-color 0.15s' }}
+          >
+            <div style={{ fontSize: 36, marginBottom: 10 }}>📊</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 6 }}>Drop Excel file or click to browse</div>
+            <div style={{ fontSize: 12, color: T.muted }}>.xlsx alebo .xls</div>
+            <input id="linesImportInput" type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+          </div>
+        </>
+      )}
+
+      {stage === 'preview' && (
+        <>
+          <div style={{ fontSize: 13, color: T.muted, marginBottom: 14 }}>
+            Nájdených <strong style={{ color: T.text }}>{sheets.length}</strong> tabov s produktmi. Vyber ktoré importovať:
+          </div>
+          <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 20 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: T.surface }}>
+                  <Th style={{ width: 36 }}></Th>
+                  <Th>Tab (PO)</Th>
+                  <Th style={{ textAlign: 'right' }}>Produktov</Th>
+                  <Th>Status</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {sheets.map((s, i) => (
+                  <tr key={i} onClick={() => toggleSelect(i)} style={{ cursor: 'pointer', borderBottom: `1px solid ${T.border}`, background: s.selected ? T.accentDim : 'transparent' }}>
+                    <Td><input type="checkbox" checked={s.selected} onChange={() => toggleSelect(i)} onClick={e => e.stopPropagation()} /></Td>
+                    <Td>
+                      <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: T.accent }}>{s.poId}</span>
+                      {s.sheetName !== s.poId && <span style={{ fontSize: 11, color: T.muted, marginLeft: 8 }}>← tab: {s.sheetName}</span>}
+                    </Td>
+                    <Td style={{ textAlign: 'right', fontWeight: 700 }}>{s.rows.length}</Td>
+                    <Td>
+                      {s.matched
+                        ? <span style={{ color: T.green, fontSize: 12, fontWeight: 600 }}>✓ PO nájdené</span>
+                        : <span style={{ color: T.yellow, fontSize: 12 }}>⚠ PO nenájdené — vytvorí sa</span>}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, color: T.muted }}>{sheets.filter(s => s.selected).length} tabov · {totalSelected} produktov celkom</span>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <BtnGhost onClick={onClose}>Cancel</BtnGhost>
+              <BtnPrimary onClick={doImport} disabled={totalSelected === 0}>Import {totalSelected} produktov</BtnPrimary>
+            </div>
+          </div>
+        </>
+      )}
+
+      {stage === 'importing' && (
+        <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+          <div style={{ width: 36, height: 36, border: `3px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 16px' }} />
+          <div style={{ fontSize: 14, color: T.text }}>Importujem produkty…</div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        </div>
+      )}
+
+      {stage === 'done' && results && (
+        <>
+          <div style={{ marginBottom: 20 }}>
+            {results.map((r, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
+                <span style={{ color: r.ok ? T.green : '#ef4444', fontSize: 16 }}>{r.ok ? '✓' : '✕'}</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: T.accent }}>{r.poId}</span>
+                <span style={{ color: r.ok ? T.muted : '#ef4444' }}>{r.ok ? `${r.count} produktov importovaných` : r.msg}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <BtnPrimary onClick={onClose}>Hotovo</BtnPrimary>
+          </div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
 // ─── MAIN PAGE ────────────────────────────────────────────────
 export default function Page() {
   return <Suspense fallback={<Shell title="Purchase Orders"><Loading /></Shell>}><PurchaseOrdersPage /></Suspense>
@@ -812,6 +994,7 @@ function PurchaseOrdersPage() {
   const [splitting, setSplitting] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showImportLines, setShowImportLines] = useState(false)
   const [checkedIds, setCheckedIds] = useState(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
@@ -936,6 +1119,7 @@ function PurchaseOrdersPage() {
       {splitting && <SplitModal po={splitting} onClose={()=>setSplitting(null)} onSaved={load} />}
       {showNew && <NewPOModal suppliers={suppliers} onClose={()=>setShowNew(false)} onSaved={load} />}
       {showImport && <ImportModal onClose={()=>setShowImport(false)} onSaved={load} />}
+      {showImportLines && <ImportLinesModal pos={pos} onClose={()=>setShowImportLines(false)} onSaved={load} />}
 
       {/* KPIs */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12, marginBottom:20 }}>
@@ -983,7 +1167,8 @@ function PurchaseOrdersPage() {
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <input placeholder="Search PO / supplier…" value={search} onChange={e=>setSearch(e.target.value)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:5, padding:'7px 12px', color:T.text, fontSize:13, width:220, outline:'none' }} />
           {view==='shipments' && <BtnGhost onClick={exportExcel}>⬇ Export Excel</BtnGhost>}
-          <BtnGhost onClick={()=>setShowImport(true)}>⬆ Import Excel</BtnGhost>
+          <BtnGhost onClick={()=>setShowImport(true)}>⬆ Import POs</BtnGhost>
+          <BtnGhost onClick={()=>setShowImportLines(true)}>📦 Import Products</BtnGhost>
           <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
             <BtnGhost onClick={()=>doSheetsSync(false)} disabled={syncing} style={{ color: syncing ? T.muted : '#34d399', borderColor: '#34d39940' }}>
               {syncing ? 'Syncing…' : '⟳ Sync Google Sheets'}
