@@ -770,6 +770,7 @@ export default function InvoicesPage() {
   const [selected, setSelected] = useState(null)
   const [pdfViewer, setPdfViewer] = useState(null)
   const [statusFilter, setStatusFilter] = useState('All')
+  const [supplierFilter, setSupplierFilter] = useState('All')
   const [search, setSearch] = useState('')
 
   const load = useCallback(async () => {
@@ -786,10 +787,12 @@ export default function InvoicesPage() {
   useEffect(() => { load() }, [load])
 
   const t = today()
+  const allSuppliers = [...new Set(invoices.map(i => i.supplier_name).filter(Boolean))].sort()
   const filtered = invoices.filter(inv => {
     const matchStatus = statusFilter === 'All' || invoiceStatus(inv) === statusFilter
+    const matchSupplier = supplierFilter === 'All' || inv.supplier_name === supplierFilter
     const matchSearch = !search || inv.invoice_number?.toLowerCase().includes(search.toLowerCase()) || inv.supplier_name?.toLowerCase().includes(search.toLowerCase())
-    return matchStatus && matchSearch
+    return matchStatus && matchSupplier && matchSearch
   })
 
   const outstanding = invoices.reduce((s, i) => s + Math.max(0, ((i.deposit_amount || 0) + (i.balance_amount || 0)) - (i.amount_paid || 0)), 0)
@@ -849,7 +852,14 @@ export default function InvoicesPage() {
                 {s === 'partial' ? 'Deposit Paid' : s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
             ))}
+            <div style={{ width: 1, height: 20, background: T.border }} />
+            <select value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}
+              style={{ ...inp, maxWidth: 200, cursor: 'pointer', color: supplierFilter !== 'All' ? T.accent : T.muted }}>
+              <option value="All">All Suppliers</option>
+              {allSuppliers.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
             <input style={{ ...inp, maxWidth: 220 }} placeholder="Search invoice # or supplier…" value={search} onChange={e => setSearch(e.target.value)} />
+            <span style={{ marginLeft: 'auto', fontSize: 12, color: T.muted }}>{filtered.length} invoice{filtered.length !== 1 ? 's' : ''}</span>
           </div>
 
           {loading ? <Loading /> : (
