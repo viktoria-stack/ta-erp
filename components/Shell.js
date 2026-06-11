@@ -1,9 +1,18 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import { useRouter, usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { T } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
+
+const NAV = [
+  { href: '/dashboard',       label: 'Dashboard',        icon: '▤' },
+  { href: '/purchase-orders', label: 'Purchase Orders',  icon: '📋' },
+  { href: '/inventory',       label: 'Inventory',        icon: '📦' },
+  { href: '/suppliers',       label: 'Suppliers',        icon: '🏭' },
+  { href: '/invoices',        label: 'Invoices',         icon: '🧾' },
+  { href: '/sales',           label: 'Sales',            icon: '📈' },
+]
 
 async function globalSearch(q) {
   if (!q || q.length < 2) return { suppliers: [], pos: [], shipments: [] }
@@ -29,35 +38,25 @@ function GlobalSearch() {
   const search = useCallback(async (q) => {
     if (!q || q.length < 2) { setResults(null); return }
     setLoading(true)
-    try {
-      const r = await globalSearch(q)
-      setResults(r)
-    } catch (e) {}
+    try { const r = await globalSearch(q); setResults(r) } catch (e) {}
     setLoading(false)
   }, [])
 
   const handleChange = (val) => {
-    setQuery(val)
-    setOpen(true)
+    setQuery(val); setOpen(true)
     clearTimeout(timer.current)
     timer.current = setTimeout(() => search(val), 300)
   }
 
-  // Cmd/Ctrl+K to focus
   useEffect(() => {
     const handler = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        inputRef.current?.focus()
-        setOpen(true)
-      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); inputRef.current?.focus(); setOpen(true) }
       if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur() }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  // Close on click outside
   useEffect(() => {
     const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', handler)
@@ -65,31 +64,26 @@ function GlobalSearch() {
   }, [])
 
   const go = (path) => { setOpen(false); setQuery(''); setResults(null); router.push(path) }
-
   const total = results ? results.suppliers.length + results.pos.length + results.shipments.length : 0
-  const showDropdown = open && query.length >= 2
 
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
-      <div style={{ display: 'flex', alignItems: 'center', background: T.subtle, border: `1px solid ${open ? T.accent : T.border}`, borderRadius: 6, padding: '6px 12px', gap: 8, width: 240, transition: 'border-color 0.15s' }}>
-        <span style={{ color: T.muted, fontSize: 14 }}>🔍</span>
+      <div style={{ display: 'flex', alignItems: 'center', background: T.subtle, border: `1px solid ${open ? T.accent : T.border}`, borderRadius: 6, padding: '6px 12px', gap: 8, width: 220, transition: 'border-color 0.15s' }}>
+        <span style={{ color: T.muted, fontSize: 13 }}>🔍</span>
         <input
           ref={inputRef}
           value={query}
           onChange={e => handleChange(e.target.value)}
           onFocus={() => setOpen(true)}
           placeholder="Search… (⌘K)"
-          style={{ background: 'none', border: 'none', outline: 'none', color: T.text, fontSize: 13, flex: 1, minWidth: 0 }}
+          style={{ background: 'none', border: 'none', outline: 'none', color: T.text, fontSize: 12, flex: 1, minWidth: 0 }}
         />
-        {loading && <div style={{ width: 12, height: 12, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />}
+        {loading && <div style={{ width: 11, height: 11, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />}
       </div>
 
-      {showDropdown && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 8px 32px #00000050', zIndex: 500, overflow: 'hidden', minWidth: 320 }}>
-          {total === 0 && !loading && (
-            <div style={{ padding: '16px 14px', color: T.muted, fontSize: 13 }}>No results for "{query}"</div>
-          )}
-
+      {open && query.length >= 2 && (
+        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: '0 8px 32px #00000050', zIndex: 500, overflow: 'hidden', minWidth: 340 }}>
+          {total === 0 && !loading && <div style={{ padding: '16px 14px', color: T.muted, fontSize: 13 }}>No results for "{query}"</div>}
           {results?.suppliers.length > 0 && (
             <div>
               <div style={{ padding: '8px 14px 4px', fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Suppliers</div>
@@ -99,12 +93,11 @@ function GlobalSearch() {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   {s.code && <span style={{ background: T.accent + '20', color: T.accent, borderRadius: 3, padding: '1px 7px', fontSize: 11, fontWeight: 800, fontFamily: 'monospace' }}>{s.code}</span>}
                   <span style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</span>
-                  <span style={{ fontSize: 11, color: s.status === 'Active' ? '#22c55e' : T.muted, marginLeft: 'auto' }}>{s.status || 'Active'}</span>
+                  <span style={{ fontSize: 11, color: s.status === 'Active' ? '#22c55e' : T.muted, marginLeft: 'auto' }}>{s.status}</span>
                 </div>
               ))}
             </div>
           )}
-
           {results?.pos.length > 0 && (
             <div style={{ borderTop: results?.suppliers.length > 0 ? `1px solid ${T.border}` : 'none' }}>
               <div style={{ padding: '8px 14px 4px', fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Purchase Orders</div>
@@ -118,7 +111,6 @@ function GlobalSearch() {
               ))}
             </div>
           )}
-
           {results?.shipments.length > 0 && (
             <div style={{ borderTop: (results?.suppliers.length + results?.pos.length) > 0 ? `1px solid ${T.border}` : 'none' }}>
               <div style={{ padding: '8px 14px 4px', fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Shipments</div>
@@ -141,25 +133,80 @@ function GlobalSearch() {
 }
 
 export default function Shell({ title, children }) {
+  const path = usePathname()
+  const router = useRouter()
+
+  const logout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+    router.refresh()
+  }
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: T.bg }}>
-      <Sidebar />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Topbar */}
-        <div style={{
-          padding: '12px 28px', borderBottom: `1px solid ${T.border}`,
-          background: T.surface, display: 'flex', justifyContent: 'space-between',
-          alignItems: 'center', flexShrink: 0
-        }}>
-          <h1 style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: 22, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+    <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column' }}>
+      {/* ── TOP NAV ── */}
+      <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'sticky', top: 0, zIndex: 100 }}>
+        {/* Logo + nav row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '0 24px', height: 50 }}>
+          {/* Logo */}
+          <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: 17, letterSpacing: '0.04em', textTransform: 'uppercase', marginRight: 32, flexShrink: 0 }}>
+            <span style={{ color: T.accent }}>TA</span>
+            <span style={{ color: T.muted, fontWeight: 500, fontSize: 14, marginLeft: 6 }}>Operations</span>
+          </div>
+
+          {/* Nav links */}
+          <nav style={{ display: 'flex', alignItems: 'center', flex: 1, gap: 2 }}>
+            {NAV.map(n => {
+              const active = path.startsWith(n.href)
+              return (
+                <Link key={n.href} href={n.href} style={{ textDecoration: 'none' }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 12px', borderRadius: 6,
+                    background: active ? T.accentDim : 'transparent',
+                    color: active ? T.accent : T.muted,
+                    fontWeight: active ? 700 : 500,
+                    fontSize: 13,
+                    borderBottom: active ? `2px solid ${T.accent}` : '2px solid transparent',
+                    transition: 'all 0.1s',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={e => { if (!active) { e.currentTarget.style.color = T.text; e.currentTarget.style.background = T.subtle } }}
+                  onMouseLeave={e => { if (!active) { e.currentTarget.style.color = T.muted; e.currentTarget.style.background = 'transparent' } }}
+                  >
+                    <span style={{ fontSize: 14 }}>{n.icon}</span>
+                    {n.label}
+                  </div>
+                </Link>
+              )
+            })}
+          </nav>
+
+          {/* Right side: search + sign out */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <GlobalSearch />
+            <button
+              onClick={logout}
+              style={{ background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 6, color: T.muted, fontSize: 12, padding: '6px 12px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              onMouseOver={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444' }}
+              onMouseOut={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.muted }}
+            >
+              ⎋ Sign Out
+            </button>
+          </div>
+        </div>
+
+        {/* Page title sub-row */}
+        <div style={{ padding: '6px 24px 8px', borderTop: `1px solid ${T.border}` }}>
+          <h1 style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: 20, textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0 }}>
             {title}
           </h1>
-          <GlobalSearch />
         </div>
-        {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-          {children}
-        </div>
+      </div>
+
+      {/* ── CONTENT ── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+        {children}
       </div>
     </div>
   )
