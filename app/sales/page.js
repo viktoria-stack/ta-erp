@@ -9,9 +9,8 @@ export default function SalesPage() {
   const [error, setError]     = useState('')
   const [search, setSearch]   = useState('')
   const [onlyWithSales, setOnlyWithSales] = useState(false)
-  const [sortCol, setSortCol] = useState('units_sold')
+  const [sortCol, setSortCol] = useState('total_sold')
   const [sortAsc, setSortAsc] = useState(false)
-  const [syncing, setSyncing] = useState(false)
 
   const load = async () => {
     setLoading(true); setError('')
@@ -28,10 +27,14 @@ export default function SalesPage() {
 
   const filtered = useMemo(() => {
     let r = rows
-    if (onlyWithSales) r = r.filter(x => x.units_sold > 0)
+    if (onlyWithSales) r = r.filter(x => x.total_sold > 0)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
-      r = r.filter(x => x.product_title.toLowerCase().includes(q) || x.sku.toLowerCase().includes(q))
+      r = r.filter(x =>
+        x.product_name.toLowerCase().includes(q) ||
+        x.sku.toLowerCase().includes(q) ||
+        x.season.toLowerCase().includes(q)
+      )
     }
     return [...r].sort((a, b) => {
       const av = a[sortCol] ?? '', bv = b[sortCol] ?? ''
@@ -40,13 +43,15 @@ export default function SalesPage() {
     })
   }, [rows, search, onlyWithSales, sortCol, sortAsc])
 
-  const totalUnits   = rows.filter(r => r.units_sold > 0).reduce((s, r) => s + r.units_sold, 0)
-  const totalSelling = rows.filter(r => r.units_sold > 0).length
-  const topProduct   = [...rows].sort((a, b) => b.units_sold - a.units_sold)[0]
+  const totalSold    = rows.reduce((s, r) => s + r.total_sold, 0)
+  const totalUK      = rows.reduce((s, r) => s + r.uk_sold, 0)
+  const totalUS      = rows.reduce((s, r) => s + r.us_sold, 0)
+  const skusWithSales = rows.filter(r => r.total_sold > 0).length
+  const topProduct   = [...rows].sort((a, b) => b.total_sold - a.total_sold)[0]
 
   const sort = (col) => {
     if (sortCol === col) setSortAsc(a => !a)
-    else { setSortCol(col); setSortAsc(col !== 'units_sold') }
+    else { setSortCol(col); setSortAsc(false) }
   }
 
   const SortTh = ({ col, children, right }) => (
@@ -57,13 +62,13 @@ export default function SalesPage() {
 
   return (
     <Shell title="Sales">
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px 40px' }}>
+      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '0 24px 40px' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
             <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: 28, letterSpacing: '-0.5px' }}>Sales</div>
-            <div style={{ color: T.muted, fontSize: 13, marginTop: 2 }}>Synced from Shopify via Google Sheets</div>
+            <div style={{ color: T.muted, fontSize: 13, marginTop: 2 }}>Core | Live Stock & Commitment — live from Google Sheets</div>
           </div>
           <button onClick={load} disabled={loading} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
             {loading ? 'Loading…' : '↻ Refresh'}
@@ -76,16 +81,18 @@ export default function SalesPage() {
 
         {/* KPI cards */}
         {!loading && rows.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 24 }}>
             {[
-              { label: 'Total Units Sold', value: totalUnits.toLocaleString(), color: T.accent },
-              { label: 'SKUs with Sales', value: totalSelling.toLocaleString(), color: T.green },
-              { label: 'Top Seller', value: topProduct?.product_title ? topProduct.product_title.slice(0, 40) + (topProduct.product_title.length > 40 ? '…' : '') : '—', sub: topProduct?.units_sold ? `${topProduct.units_sold} units` : '', color: '#a78bfa' },
+              { label: 'Total Sold',    value: totalSold.toLocaleString(),    color: T.accent },
+              { label: 'UK Sold',       value: totalUK.toLocaleString(),      color: '#3b82f6' },
+              { label: 'US Sold',       value: totalUS.toLocaleString(),      color: '#f59e0b' },
+              { label: 'SKUs Selling',  value: skusWithSales.toLocaleString(), color: T.green },
+              { label: 'Top Seller',    value: topProduct?.product_name?.slice(0,35) + (topProduct?.product_name?.length > 35 ? '…' : '') || '—', sub: topProduct?.total_sold ? `${topProduct.total_sold} units` : '', color: '#a78bfa' },
             ].map(k => (
-              <div key={k.label} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '16px 20px' }}>
-                <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{k.label}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: k.color, lineHeight: 1.2 }}>{k.value}</div>
-                {k.sub && <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>{k.sub}</div>}
+              <div key={k.label} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{k.label}</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: k.color, lineHeight: 1.2 }}>{k.value}</div>
+                {k.sub && <div style={{ fontSize: 12, color: T.muted, marginTop: 3 }}>{k.sub}</div>}
               </div>
             ))}
           </div>
@@ -95,7 +102,7 @@ export default function SalesPage() {
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search product or SKU…"
+            placeholder="Search product, SKU or season…"
             style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: '8px 12px', color: T.text, fontSize: 13, outline: 'none', width: 280 }}
           />
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: T.muted, cursor: 'pointer', userSelect: 'none' }}>
@@ -103,7 +110,7 @@ export default function SalesPage() {
             Only show SKUs with sales
           </label>
           {!loading && (
-            <div style={{ marginLeft: 'auto', fontSize: 12, color: T.muted }}>{filtered.length} of {rows.length} SKUs</div>
+            <div style={{ marginLeft: 'auto', fontSize: 12, color: T.muted }}>{filtered.length.toLocaleString()} of {rows.length.toLocaleString()} SKUs</div>
           )}
         </div>
 
@@ -111,22 +118,32 @@ export default function SalesPage() {
         {loading ? <Loading /> : (
           <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                 <thead>
                   <tr style={{ background: T.surface }}>
-                    <SortTh col="product_title">Product</SortTh>
+                    <SortTh col="season">Season</SortTh>
+                    <SortTh col="product_name">Product</SortTh>
                     <SortTh col="sku">SKU</SortTh>
-                    <SortTh col="units_sold" right>Units Sold</SortTh>
+                    <SortTh col="uk_sold" right>UK Sold</SortTh>
+                    <SortTh col="us_sold" right>US Sold</SortTh>
+                    <SortTh col="total_sold" right>Total Sold</SortTh>
+                    <SortTh col="uk_commit" right>UK Commit</SortTh>
+                    <SortTh col="us_commit" right>US Commit</SortTh>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={3} style={{ padding: 32, textAlign: 'center', color: T.muted, fontSize: 13 }}>No results</td></tr>
+                    <tr><td colSpan={8} style={{ padding: 32, textAlign: 'center', color: T.muted, fontSize: 13 }}>No results</td></tr>
                   ) : filtered.map((r, i) => (
-                    <tr key={i} style={{ borderTop: `1px solid ${T.border}`, background: r.units_sold > 0 ? 'transparent' : `${T.surface}80` }}>
-                      <Td style={{ fontWeight: r.units_sold > 0 ? 600 : 400, color: r.units_sold > 0 ? T.text : T.muted }}>{r.product_title || '—'}</Td>
-                      <Td style={{ fontFamily: 'monospace', fontSize: 12, color: T.muted }}>{r.sku || '—'}</Td>
-                      <Td style={{ textAlign: 'right', fontWeight: 700, color: r.units_sold > 0 ? T.accent : T.muted }}>{r.units_sold > 0 ? r.units_sold.toLocaleString() : '0'}</Td>
+                    <tr key={i} style={{ borderTop: `1px solid ${T.border}`, background: r.total_sold > 0 ? 'transparent' : `${T.surface}80` }}>
+                      <Td style={{ fontSize: 11, color: T.muted }}>{r.season || '—'}</Td>
+                      <Td style={{ fontWeight: r.total_sold > 0 ? 600 : 400, color: r.total_sold > 0 ? T.text : T.muted, maxWidth: 320 }}>{r.product_name || '—'}</Td>
+                      <Td style={{ fontFamily: 'monospace', fontSize: 12, color: T.muted }}>{r.sku}</Td>
+                      <Td style={{ textAlign: 'right', color: r.uk_sold > 0 ? '#3b82f6' : T.muted, fontWeight: r.uk_sold > 0 ? 700 : 400 }}>{r.uk_sold > 0 ? r.uk_sold : '—'}</Td>
+                      <Td style={{ textAlign: 'right', color: r.us_sold > 0 ? '#f59e0b' : T.muted, fontWeight: r.us_sold > 0 ? 700 : 400 }}>{r.us_sold > 0 ? r.us_sold : '—'}</Td>
+                      <Td style={{ textAlign: 'right', fontWeight: 700, color: r.total_sold > 0 ? T.accent : T.muted }}>{r.total_sold > 0 ? r.total_sold : '—'}</Td>
+                      <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{r.uk_commit > 0 ? r.uk_commit : '—'}</Td>
+                      <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{r.us_commit > 0 ? r.us_commit : '—'}</Td>
                     </tr>
                   ))}
                 </tbody>

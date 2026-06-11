@@ -39,10 +39,13 @@ async function getAccessToken() {
   return access_token
 }
 
+const num = v => parseFloat(String(v ?? '').replace(/[£$,\s]/g, '')) || 0
+
 export async function GET() {
   try {
     const token = await getAccessToken()
-    const range = `'${SHEET_NAME}'!A:C`
+    // Sheet structure (0-indexed): A=season, B=product, C=sku, D=uk_sold, E=us_sold, F=total_sold, G=uk_commit, H=us_commit, I=total_commit
+    const range = `'${SHEET_NAME}'!A:I`
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
     if (!res.ok) {
@@ -52,18 +55,35 @@ export async function GET() {
     const { values } = await res.json()
     if (!values || values.length < 2) return NextResponse.json({ rows: [] })
 
-    const headers = values[0].map(h => String(h).trim().toLowerCase())
-    const iTitle  = headers.findIndex(h => h.includes('product') || h.includes('title'))
-    const iSku    = headers.findIndex(h => h === 'sku' || h.includes('sku'))
-    const iUnits  = headers.findIndex(h => h.includes('units') || h.includes('sold') || h.includes('qty'))
+    // Fill down merged cells for season and product name
+    let lastSeason = '', lastProduct = ''
+    const rows = []
 
-    const rows = values.slice(1)
-      .map(row => ({
-        product_title: String(row[iTitle >= 0 ? iTitle : 0] ?? '').trim(),
-        sku:           String(row[iSku   >= 0 ? iSku   : 1] ?? '').trim(),
-        units_sold:    parseInt(String(row[iUnits >= 0 ? iUnits : 2] ?? '0').replace(/,/g, '')) || 0,
-      }))
-      .filter(r => r.sku || r.product_title)
+    for (const row of values) {
+      const season  = String(row[0] ?? '').trim()
+      const product = String(row[1] ?? '').trim()
+      const sku     = String(row[2] ?? '').trim()
+
+      // Skip header/separator rows
+      if (!sku || sku === 'NO_HEADER' || sku.toLowerCase() === 'sku') continue
+      // Skip TOTALS summary rows
+      if (sku.toUpperCase() === 'TOTALS') continue
+
+      if (season)  lastSeason  = season
+      if (product) lastProduct = product
+
+      rows.push({
+        season:       lastSeason,
+        product_name: lastProduct,
+        sku,
+        uk_sold:      num(row[3]),
+        us_sold:      num(row[4]),
+        total_sold:   num(row[5]),
+        uk_commit:    num(row[6]),
+        us_commit:    num(row[7]),
+        total_commit: num(row[8]),
+      })
+    }
 
     return NextResponse.json({ rows })
   } catch (err) {
