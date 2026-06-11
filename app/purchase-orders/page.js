@@ -398,9 +398,9 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
     }
   }, [tab])
   const isUnsplit = shipments.length === 0 && !po.po_splits_confirmed
-  const totalUK = lines.reduce((s,l)=>s+(l.qty_uk||0),0)
-  const totalUSA = lines.reduce((s,l)=>s+(l.qty_usa||0),0)
+  const totalUnits = lines.reduce((s,l)=>s+(l.qty_uk||0)+(l.qty_usa||0),0)
   const grandTotal = lines.reduce((s,l)=>s+lineTotal(l),0)
+  const [showSplit, setShowSplit] = useState(false)
 
   const TabBtn = ({id,label}) => (
     <button onClick={()=>setTab(id)} style={{ background:tab===id?T.accent:'transparent', color:tab===id?'#fff':T.muted, border:`1px solid ${tab===id?T.accent:T.border}`, borderRadius:5, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
@@ -475,8 +475,19 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
         </div>
       )}
 
+      {tab === 'lines' && showSplit && lines.length > 0 && (
+        <SplitCalculator lines={lines} currency={po.currency||'USD'} onClose={()=>setShowSplit(false)} />
+      )}
+
       {tab === 'lines' && (
         <div style={{ overflowX:'auto' }}>
+          {lines.length > 0 && !showSplit && (
+            <div style={{ padding:'8px 0', textAlign:'right' }}>
+              <button onClick={()=>setShowSplit(true)} style={{ background:T.accent, color:'#fff', border:'none', borderRadius:5, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                Calculate Split
+              </button>
+            </div>
+          )}
           {linesLoading ? (
             <div style={{ padding:32, textAlign:'center', color:T.muted, fontSize:13 }}>Loading line items…</div>
           ) : lines.length === 0 ? (
@@ -487,8 +498,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
                 <tr style={{ background:T.surface }}>
                   <Th>Product Name</Th><Th>Size</Th><Th>Design Ref.</Th><Th>Colour</Th><Th>SKU</Th>
                   <Th style={{ textAlign:'right' }}>Cost</Th>
-                  <Th style={{ textAlign:'right' }}>UK Qty</Th>
-                  <Th style={{ textAlign:'right' }}>USA Qty</Th>
+                  <Th style={{ textAlign:'right' }}>Total Units</Th>
                   <Th style={{ textAlign:'right' }}>Conf. XF</Th>
                   <Th style={{ textAlign:'right' }}>Line Total</Th>
                 </tr>
@@ -502,16 +512,14 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
                     <Td style={{ color:T.muted, fontSize:12 }}>{l.colour_code||'—'}</Td>
                     <Td style={{ color:T.muted, fontFamily:'monospace', fontSize:11 }}>{l.sku||'—'}</Td>
                     <Td style={{ textAlign:'right', color:T.muted }}>{fmt(l.cost_price, po.currency||'USD')}</Td>
-                    <Td style={{ textAlign:'right', fontWeight:600 }}>{(l.qty_uk||0).toLocaleString()}</Td>
-                    <Td style={{ textAlign:'right', fontWeight:600 }}>{(l.qty_us||l.qty_usa||0).toLocaleString()}</Td>
+                    <Td style={{ textAlign:'right', fontWeight:600 }}>{((l.qty_uk||0)+(l.qty_usa||0)).toLocaleString()}</Td>
                     <Td style={{ textAlign:'right', color:T.green, fontWeight:700 }}>{(l.confirmed_xf||0).toLocaleString()}</Td>
                     <Td style={{ textAlign:'right', color:T.accent, fontWeight:700 }}>{fmt(lineTotal(l), po.currency||'USD')}</Td>
                   </tr>
                 ))}
                 <tr style={{ background:T.surface, borderTop:`2px solid ${T.border}` }}>
                   <Td colSpan={6} style={{ fontWeight:700 }}>TOTALS</Td>
-                  <Td style={{ textAlign:'right', fontWeight:800 }}>{totalUK.toLocaleString()}</Td>
-                  <Td style={{ textAlign:'right', fontWeight:800 }}>{totalUSA.toLocaleString()}</Td>
+                  <Td style={{ textAlign:'right', fontWeight:800 }}>{totalUnits.toLocaleString()}</Td>
                   <Td></Td>
                   <Td style={{ textAlign:'right', fontWeight:800, color:T.accent, fontSize:15 }}>{fmt(grandTotal, po.currency||'USD')}</Td>
                 </tr>
@@ -535,6 +543,72 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
         <BtnGhost onClick={onClose}>Close</BtnGhost>
       </div>
     </Modal>
+  )
+}
+
+// ─── SPLIT CALCULATOR ─────────────────────────────────────────
+const SPLIT_RATIOS = [
+  { size: 'S',   row: 0.12, us: 0.10 },
+  { size: 'M',   row: 0.32, us: 0.27 },
+  { size: 'L',   row: 0.30, us: 0.32 },
+  { size: 'XL',  row: 0.21, us: 0.21 },
+  { size: 'XXL', row: 0.05, us: 0.09 },
+]
+const ROW_SPLIT = 0.47
+const US_SPLIT  = 0.53
+
+function SplitCalculator({ lines, currency, onClose }) {
+  const products = [...new Set(lines.map(l => l.product_name))].filter(Boolean)
+  const splitRows = lines.map(l => {
+    const total = (l.qty_uk || 0) + (l.qty_usa || 0)
+    const ratio = SPLIT_RATIOS.find(r => r.size === l.size) || { row: 0.5, us: 0.5 }
+    return {
+      ...l,
+      split_uk:  Math.round(total * ROW_SPLIT * (ratio.row / (ROW_SPLIT * ratio.row + US_SPLIT * ratio.us || 1)) * (ROW_SPLIT)),
+      split_usa: Math.round(total * US_SPLIT  * (ratio.us / (ROW_SPLIT * ratio.row + US_SPLIT * ratio.us || 1)) * (US_SPLIT)),
+      split_uk2:  Math.round(total * ROW_SPLIT),
+      split_usa2: Math.round(total * US_SPLIT),
+    }
+  })
+
+  const totalUK  = splitRows.reduce((s,r) => s + r.split_uk2, 0)
+  const totalUSA = splitRows.reduce((s,r) => s + r.split_usa2, 0)
+
+  return (
+    <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:16, marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+        <div style={{ fontWeight:700, fontSize:14 }}>Warehouse Split (ROW 47% / USA 53%)</div>
+        <button onClick={onClose} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', lineHeight:1 }}>×</button>
+      </div>
+      <div style={{ overflowX:'auto' }}>
+        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+          <thead>
+            <tr style={{ background:T.subtle }}>
+              <Th>Product</Th><Th>Size</Th>
+              <Th style={{ textAlign:'right' }}>Total</Th>
+              <Th style={{ textAlign:'right', color:'#3b82f6' }}>UK (ROW 47%)</Th>
+              <Th style={{ textAlign:'right', color:'#f59e0b' }}>USA (53%)</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {splitRows.map((r,i) => (
+              <tr key={i} style={{ borderBottom:`1px solid ${T.border}` }}>
+                <Td style={{ fontWeight:600 }}>{r.product_name}</Td>
+                <Td><span style={{ background:T.subtle, borderRadius:4, padding:'2px 8px', fontSize:11, fontWeight:700 }}>{r.size}</span></Td>
+                <Td style={{ textAlign:'right' }}>{((r.qty_uk||0)+(r.qty_usa||0)).toLocaleString()}</Td>
+                <Td style={{ textAlign:'right', color:'#3b82f6', fontWeight:600 }}>{r.split_uk2.toLocaleString()}</Td>
+                <Td style={{ textAlign:'right', color:'#f59e0b', fontWeight:600 }}>{r.split_usa2.toLocaleString()}</Td>
+              </tr>
+            ))}
+            <tr style={{ background:T.surface, borderTop:`2px solid ${T.border}`, fontWeight:800 }}>
+              <Td colSpan={3} style={{ fontWeight:700 }}>TOTALS</Td>
+              <Td style={{ textAlign:'right', color:'#3b82f6', fontWeight:800 }}>{totalUK.toLocaleString()}</Td>
+              <Td style={{ textAlign:'right', color:'#f59e0b', fontWeight:800 }}>{totalUSA.toLocaleString()}</Td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
 
@@ -805,16 +879,6 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
     return headers.findIndex(h => rx.test(String(h).trim()))
   }
 
-  const SIZE_SPLIT = [
-    { size: 'S',   row: 0.12, us: 0.10 },
-    { size: 'M',   row: 0.32, us: 0.27 },
-    { size: 'L',   row: 0.30, us: 0.32 },
-    { size: 'XL',  row: 0.21, us: 0.21 },
-    { size: 'XXL', row: 0.05, us: 0.09 },
-  ]
-  const ROW_SPLIT = 0.47
-  const US_SPLIT  = 0.53
-
   const parseSheet = (sheetName, data) => {
     if (!data || data.length < 2) return []
     // find the header row by scanning up to row 20
@@ -827,36 +891,30 @@ function ImportLinesModal({ pos, onClose, onSaved }) {
     }
     const headers = (data[headerRowIdx] || []).map(h => String(h ?? '').trim())
     let iName  = colMatch(headers, 'product.?name', 'product', 'description', 'item', 'style', 'garment', 'name')
+    const iSize    = colMatch(headers, '^size$', 'size')
     const iSku     = colMatch(headers, '^sku$', 'barcode', 'article')
     const iDesign  = colMatch(headers, 'design.?ref', 'design', 'style.?ref', 'style.?no', 'ref.?no')
     const iColour  = colMatch(headers, 'colour.?code', 'colou?r')
     const iCost    = colMatch(headers, 'cost.?price', 'cost', 'unit.?price', '^price')
     const iTotal   = colMatch(headers, 'total.?quantity', 'total.?qty', 'total.?units', 'total')
-    const iXF      = colMatch(headers, 'confirmed', 'xf', 'ex.?factory', 'approved')
     if (iName < 0) iName = 0
     const g = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : ''
     const n = (row, i) => i >= 0 ? (parseFloat(String(row[i] ?? '').replace(/[,\s]/g, '')) || 0) : 0
 
     return data.slice(headerRowIdx + 1)
       .filter(row => row.some(c => c !== null && c !== undefined && c !== ''))
-      .flatMap(row => {
-        const base = {
-          product_name: g(row, iName),
-          sku:          g(row, iSku),
-          design_ref:   g(row, iDesign),
-          colour_code:  g(row, iColour),
-          cost_price:   n(row, iCost),
-          confirmed_xf: n(row, iXF),
-        }
-        if (!base.product_name && !base.sku && !base.design_ref && !base.colour_code) return []
-        const total = n(row, iTotal)
-        return SIZE_SPLIT.map(({ size, row: rRatio, us: uRatio }) => ({
-          ...base,
-          size,
-          qty_uk:  Math.round(total * ROW_SPLIT * rRatio),
-          qty_usa: Math.round(total * US_SPLIT  * uRatio),
-        }))
-      })
+      .map(row => ({
+        product_name: g(row, iName),
+        size:         g(row, iSize) || '',
+        sku:          g(row, iSku),
+        design_ref:   g(row, iDesign),
+        colour_code:  g(row, iColour),
+        cost_price:   Math.round((n(row, iCost) + Number.EPSILON) * 100) / 100,
+        qty_uk:       Math.round(n(row, iTotal)),
+        qty_usa:      0,
+        confirmed_xf: 0,
+      }))
+      .filter(r => r.product_name || r.sku || r.design_ref || r.colour_code || r.qty_uk > 0)
   }
 
   const handleFile = (file) => {
