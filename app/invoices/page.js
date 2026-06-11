@@ -460,8 +460,10 @@ function EditModal({ invoice, pos, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [pdfUrl, setPdfUrl] = useState(invoice.pdf_url || null)
+  const [uploadingDep, setUploadingDep] = useState(false)
+  const [uploadingBal, setUploadingBal] = useState(false)
+  const [depositPdfUrl, setDepositPdfUrl] = useState(invoice.deposit_pdf_url || invoice.pdf_url || null)
+  const [balancePdfUrl, setBalancePdfUrl] = useState(invoice.balance_pdf_url || null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const save = async () => {
@@ -476,7 +478,8 @@ function EditModal({ invoice, pos, onClose, onSaved }) {
       balance_due_date: form.balance_due_date || null,
       balance_paid_date: form.balance_paid_date || null,
       po_id: form.po_id || null,
-      pdf_url: pdfUrl,
+      deposit_pdf_url: depositPdfUrl,
+      balance_pdf_url: balancePdfUrl,
     }).eq('id', invoice.id)
     setSaving(false); onSaved(); onClose()
   }
@@ -487,42 +490,50 @@ function EditModal({ invoice, pos, onClose, onSaved }) {
     onSaved(); onClose()
   }
 
-  const uploadPdf = async (file) => {
+  const uploadPdf = async (file, type) => {
     if (!file) return
+    const setUploading = type === 'deposit' ? setUploadingDep : setUploadingBal
+    const setUrl = type === 'deposit' ? setDepositPdfUrl : setBalancePdfUrl
     setUploading(true)
-    const path = `invoices/${Date.now()}_${file.name}`
+    const path = `invoices/${Date.now()}_${type}_${file.name}`
     const { error } = await supabase.storage.from('invoices').upload(path, file)
     if (!error) {
       const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(path)
-      setPdfUrl(publicUrl)
+      setUrl(publicUrl)
     }
     setUploading(false)
   }
 
+  const PdfField = ({ label, url, uploading, type }) => (
+    <div style={{ flex: 1, background: T.subtle, border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px 14px' }}>
+      <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 8 }}>{label}</div>
+      {url ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <a href={url} target="_blank" rel="noopener"
+            style={{ color: T.accent, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+            📄 View
+          </a>
+          <label style={{ color: T.muted, fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>
+            Replace
+            <input type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => uploadPdf(e.target.files[0], type)} />
+          </label>
+        </div>
+      ) : (
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: uploading ? T.muted : T.text, fontSize: 12,
+          cursor: uploading ? 'default' : 'pointer', border: `1px dashed ${T.border}`, borderRadius: 5, padding: '5px 10px' }}>
+          {uploading ? 'Uploading…' : '+ Attach'}
+          <input type="file" accept=".pdf,image/*" style={{ display: 'none' }} disabled={uploading} onChange={e => uploadPdf(e.target.files[0], type)} />
+        </label>
+      )}
+    </div>
+  )
+
   return (
     <Modal title={`Invoice — ${invoice.invoice_number}`} onClose={onClose} wide>
       <InvoiceForm form={form} set={set} pos={pos} isEdit />
-      <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-        {pdfUrl ? (
-          <>
-            <a href={pdfUrl} target="_blank" rel="noopener"
-              style={{ color: T.accent, fontSize: 13, fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
-              📄 View PDF
-            </a>
-            <span style={{ color: T.border }}>·</span>
-            <label style={{ color: T.muted, fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}>
-              Replace
-              <input type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => uploadPdf(e.target.files[0])} />
-            </label>
-          </>
-        ) : (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 7, color: T.muted, fontSize: 13, cursor: 'pointer',
-            background: T.subtle, border: `1px dashed ${T.border}`, borderRadius: 6, padding: '7px 14px' }}>
-            {uploading ? 'Uploading…' : '+ Attach PDF'}
-            <input type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => uploadPdf(e.target.files[0])} disabled={uploading} />
-          </label>
-        )}
-        {uploading && <span style={{ fontSize: 12, color: T.muted }}>Uploading…</span>}
+      <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+        <PdfField label="Deposit Invoice PDF" url={depositPdfUrl} uploading={uploadingDep} type="deposit" />
+        <PdfField label="Balance Invoice PDF" url={balancePdfUrl} uploading={uploadingBal} type="balance" />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>
         <div>
@@ -1063,10 +1074,21 @@ export default function InvoicesPage() {
                             {sc.label}
                           </span>
                         </Td>
-                        <Td onClick={e => { if (inv.pdf_url) { e.stopPropagation(); setPdfViewer(inv.pdf_url) } }} style={{ textAlign: 'center' }}>
-                          {inv.pdf_url
-                            ? <span style={{ color: T.accent, fontSize: 15, cursor: 'pointer' }} title="View PDF">📄</span>
-                            : <span style={{ color: T.border }}>—</span>}
+                        <Td onClick={e => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', gap: 5 }}>
+                            {(inv.deposit_pdf_url || inv.pdf_url) ? (
+                              <span onClick={() => setPdfViewer(inv.deposit_pdf_url || inv.pdf_url)}
+                                style={{ fontSize: 10, fontWeight: 700, color: T.yellow, background: T.yellowDim, border: `1px solid ${T.yellow}40`, borderRadius: 3, padding: '2px 5px', cursor: 'pointer' }} title="Deposit PDF">DEP</span>
+                            ) : (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: T.border, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 3, padding: '2px 5px' }}>DEP</span>
+                            )}
+                            {inv.balance_pdf_url ? (
+                              <span onClick={() => setPdfViewer(inv.balance_pdf_url)}
+                                style={{ fontSize: 10, fontWeight: 700, color: T.blue, background: T.blueDim, border: `1px solid ${T.blue}40`, borderRadius: 3, padding: '2px 5px', cursor: 'pointer' }} title="Balance PDF">BAL</span>
+                            ) : (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: T.border, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 3, padding: '2px 5px' }}>BAL</span>
+                            )}
+                          </div>
                         </Td>
                       </tr>
                     )
