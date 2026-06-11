@@ -875,20 +875,71 @@ export default function InvoicesPage() {
                   const sc = STATUS_CFG[invoiceStatus(inv)]
                   const depOD = inv.deposit_amount > 0 && !inv.deposit_paid_date && inv.deposit_due_date && inv.deposit_due_date < t
                   const balOD = inv.balance_amount > 0 && !inv.balance_paid_date && inv.balance_due_date && inv.balance_due_date < t
+
+                  const markPaid = async (e, field) => {
+                    e.stopPropagation()
+                    await supabase.from('invoices').update({ [field]: today() }).eq('id', inv.id)
+                    load()
+                  }
+                  const markUnpaid = async (e, field) => {
+                    e.stopPropagation()
+                    await supabase.from('invoices').update({ [field]: null }).eq('id', inv.id)
+                    load()
+                  }
+
                   return (
                     <tr key={inv.id} onClick={() => setSelected(inv)} className="row-hover" style={{ borderBottom: `1px solid ${T.border}`, cursor: 'pointer' }}>
                       <Td style={{ fontFamily: 'monospace', fontWeight: 700, color: T.accent }}>{inv.invoice_number}</Td>
                       <Td style={{ fontWeight: 600 }}>{inv.supplier_name}</Td>
                       <Td style={{ fontSize: 12, color: T.muted }}>{inv.po_id || '—'}</Td>
                       <Td style={{ fontSize: 12, color: T.muted }}>{inv.invoice_date || '—'}</Td>
-                      <Td style={{ color: inv.deposit_paid_date ? '#22c55e' : depOD ? '#ef4444' : T.text }}>
-                        {inv.deposit_amount > 0 ? <>{fmt(inv.deposit_amount, inv.currency)}{inv.deposit_paid_date && <span style={{ fontSize: 10, marginLeft: 4 }}>✓</span>}</> : '—'}
+
+                      {/* Deposit */}
+                      <Td onClick={e => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
+                        {inv.deposit_amount > 0 ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ color: inv.deposit_paid_date ? T.green : depOD ? '#ef4444' : T.text, fontWeight: 600 }}>
+                              {fmt(inv.deposit_amount, inv.currency)}
+                            </span>
+                            {inv.deposit_paid_date ? (
+                              <button onClick={e => markUnpaid(e, 'deposit_paid_date')} title={`Paid ${inv.deposit_paid_date} — click to undo`}
+                                style={{ background: T.greenDim, color: T.green, border: `1px solid ${T.green}40`, borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                ✓ {inv.deposit_paid_date}
+                              </button>
+                            ) : (
+                              <button onClick={e => markPaid(e, 'deposit_paid_date')}
+                                style={{ background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                Mark Paid
+                              </button>
+                            )}
+                          </div>
+                        ) : <span style={{ color: T.muted }}>—</span>}
                       </Td>
                       <Td style={{ fontSize: 12, color: depOD ? '#ef4444' : T.muted }}>{inv.deposit_due_date || '—'}</Td>
-                      <Td style={{ color: inv.balance_paid_date ? '#22c55e' : balOD ? '#ef4444' : T.text }}>
-                        {inv.balance_amount > 0 ? <>{fmt(inv.balance_amount, inv.currency)}{inv.balance_paid_date && <span style={{ fontSize: 10, marginLeft: 4 }}>✓</span>}</> : '—'}
+
+                      {/* Balance */}
+                      <Td onClick={e => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
+                        {inv.balance_amount > 0 ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ color: inv.balance_paid_date ? T.green : balOD ? '#ef4444' : T.text, fontWeight: 600 }}>
+                              {fmt(inv.balance_amount, inv.currency)}
+                            </span>
+                            {inv.balance_paid_date ? (
+                              <button onClick={e => markUnpaid(e, 'balance_paid_date')} title={`Paid ${inv.balance_paid_date} — click to undo`}
+                                style={{ background: T.greenDim, color: T.green, border: `1px solid ${T.green}40`, borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                ✓ {inv.balance_paid_date}
+                              </button>
+                            ) : (
+                              <button onClick={e => markPaid(e, 'balance_paid_date')}
+                                style={{ background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, borderRadius: 4, padding: '1px 7px', fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                Mark Paid
+                              </button>
+                            )}
+                          </div>
+                        ) : <span style={{ color: T.muted }}>—</span>}
                       </Td>
                       <Td style={{ fontSize: 12, color: balOD ? '#ef4444' : T.muted }}>{inv.balance_due_date || '—'}</Td>
+
                       <Td style={{ fontWeight: 700 }}>{fmt((inv.deposit_amount || 0) + (inv.balance_amount || 0), inv.currency)}</Td>
                       <Td><span style={{ background: sc.bg, color: sc.color, border: `1px solid ${sc.color}40`, borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{sc.label}</span></Td>
                       <Td onClick={e => { if (inv.pdf_url) { e.stopPropagation(); setPdfViewer(inv.pdf_url) } }}>
@@ -899,7 +950,7 @@ export default function InvoicesPage() {
                     </tr>
                   )
                 })}
-                {filtered.length === 0 && <tr><td colSpan={10} style={{ padding: 32, textAlign: 'center', color: T.muted }}>No invoices found</td></tr>}
+                {filtered.length === 0 && <tr><td colSpan={11} style={{ padding: 32, textAlign: 'center', color: T.muted }}>No invoices found</td></tr>}
               </tbody>
             </table>
           )}
