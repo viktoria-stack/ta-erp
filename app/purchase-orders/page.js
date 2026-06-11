@@ -566,7 +566,7 @@ const sortByProductThenSize = (lines) => {
   const sorted = [...lines].sort((a, b) => {
     const pi = groupOrder.indexOf(getGroup(a)) - groupOrder.indexOf(getGroup(b))
     if (pi !== 0) return pi
-    const ai = SIZE_ORDER.indexOf(a.size), bi = SIZE_ORDER.indexOf(b.size)
+    const ai = SIZE_ORDER.indexOf((a.size||'').trim().toUpperCase()), bi = SIZE_ORDER.indexOf((b.size||'').trim().toUpperCase())
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
   })
   // fill product_name / design_ref / colour_code within now-contiguous groups
