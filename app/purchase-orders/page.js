@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import Shell from '@/components/Shell'
 import { T, KPI, Card, Badge, Th, Td, Input, BtnPrimary, BtnGhost, Modal, CURRENCIES, fmt, Loading, ErrorMsg } from '@/components/ui'
-import { supabase, getPurchaseOrders, getSuppliers, createPurchaseOrder, updatePurchaseOrder, updateShipment, addShipment, getPoLines } from '@/lib/supabase'
+import { supabase, getPurchaseOrders, getSuppliers, createPurchaseOrder, updatePurchaseOrder, updateShipment, addShipment, getPoLines, updatePoLine } from '@/lib/supabase'
 import PackingListPanel from '@/components/PackingListPanel'
 
 // PO STATUS HELPERS
@@ -497,7 +497,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
       )}
 
       {tab === 'lines' && showSplit && lines.length > 0 && (
-        <SplitCalculator lines={lines} currency={po.currency||'USD'} poId={po.id} onClose={()=>setShowSplit(false)} />
+        <SplitCalculator lines={lines} currency={po.currency||'USD'} poId={po.id} onClose={()=>setShowSplit(false)} onSaved={onSaved} />
       )}
 
       {tab === 'lines' && (
@@ -519,8 +519,10 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
                 <tr style={{ background:T.surface }}>
                   <Th>Product Name</Th><Th>Size</Th><Th>Design Ref.</Th><Th>Colour</Th><Th>SKU</Th>
                   <Th style={{ textAlign:'right' }}>Cost</Th>
-                  <Th style={{ textAlign:'right' }}>Total Units</Th>
-                  <Th style={{ textAlign:'right' }}>Conf. XF</Th>
+                  <Th style={{ textAlign:'right' }}>Ordered</Th>
+                  <Th style={{ textAlign:'right', color:T.accent }}>Cut Qty</Th>
+                  <Th style={{ textAlign:'right', color:T.blue }}>UK ROW</Th>
+                  <Th style={{ textAlign:'right', color:T.yellow }}>USA</Th>
                   <Th style={{ textAlign:'right' }}>Line Total</Th>
                 </tr>
               </thead>
@@ -533,15 +535,19 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
                     <Td style={{ color:T.muted, fontSize:12 }}>{l.colour_code||'—'}</Td>
                     <Td style={{ color:T.muted, fontFamily:'monospace', fontSize:11 }}>{l.sku||'—'}</Td>
                     <Td style={{ textAlign:'right', color:T.muted }}>{fmt(l.cost_price, po.currency||'USD')}</Td>
-                    <Td style={{ textAlign:'right', fontWeight:600 }}>{((l.qty_uk||0)+(l.qty_usa||0)).toLocaleString()}</Td>
-                    <Td style={{ textAlign:'right', color:T.green, fontWeight:700 }}>{(l.confirmed_xf||0).toLocaleString()}</Td>
+                    <Td style={{ textAlign:'right', color:T.muted }}>{((l.qty_uk||0)+(l.qty_usa||0)).toLocaleString()}</Td>
+                    <Td style={{ textAlign:'right', fontWeight:700, color:l.cut_qty>0?T.accent:T.muted }}>{l.cut_qty>0?l.cut_qty.toLocaleString():'—'}</Td>
+                    <Td style={{ textAlign:'right', color:l.qty_uk>0&&l.qty_usa>0?T.blue:T.muted }}>{l.qty_uk>0&&l.qty_usa>0?l.qty_uk.toLocaleString():'—'}</Td>
+                    <Td style={{ textAlign:'right', color:l.qty_uk>0&&l.qty_usa>0?T.yellow:T.muted }}>{l.qty_uk>0&&l.qty_usa>0?l.qty_usa.toLocaleString():'—'}</Td>
                     <Td style={{ textAlign:'right', color:T.accent, fontWeight:700 }}>{fmt(lineTotal(l), po.currency||'USD')}</Td>
                   </tr>
                 ))}
                 <tr style={{ background:T.surface, borderTop:`2px solid ${T.border}` }}>
                   <Td colSpan={6} style={{ fontWeight:700 }}>TOTALS</Td>
-                  <Td style={{ textAlign:'right', fontWeight:800 }}>{totalUnits.toLocaleString()}</Td>
-                  <Td></Td>
+                  <Td style={{ textAlign:'right', fontWeight:800, color:T.muted }}>{totalUnits.toLocaleString()}</Td>
+                  <Td style={{ textAlign:'right', fontWeight:800, color:T.accent }}>{lines.reduce((s,l)=>s+(l.cut_qty||0),0).toLocaleString()||'—'}</Td>
+                  <Td style={{ textAlign:'right', fontWeight:800, color:T.blue }}>{lines.filter(l=>l.qty_uk>0&&l.qty_usa>0).length>0?lines.reduce((s,l)=>s+(l.qty_uk||0),0).toLocaleString():'—'}</Td>
+                  <Td style={{ textAlign:'right', fontWeight:800, color:T.yellow }}>{lines.filter(l=>l.qty_uk>0&&l.qty_usa>0).length>0?lines.reduce((s,l)=>s+(l.qty_usa||0),0).toLocaleString():'—'}</Td>
                   <Td style={{ textAlign:'right', fontWeight:800, color:T.accent, fontSize:15 }}>{fmt(grandTotal, po.currency||'USD')}</Td>
                 </tr>
               </tbody>
@@ -607,25 +613,48 @@ const sortByProductThenSize = (lines) => {
 const ROW_SPLIT = 0.47
 const US_SPLIT  = 0.53
 
-function SplitCalculator({ lines, currency, poId, onClose }) {
-  const splitRows = sortByProductThenSize(lines).map(l => {
-    const total = (l.qty_uk || 0) + (l.qty_usa || 0)
-    return {
-      ...l,
-      split_uk:  Math.round(total * ROW_SPLIT),
-      split_usa: Math.round(total * US_SPLIT),
-    }
+function SplitCalculator({ lines, currency, poId, onClose, onSaved }) {
+  const sorted = sortByProductThenSize(lines)
+  const [rowPct, setRowPct] = useState(47)
+  const [cutQtys, setCutQtys] = useState(() => {
+    const m = {}
+    sorted.forEach(l => { m[l.id] = l.cut_qty > 0 ? l.cut_qty : (l.qty_uk || 0) + (l.qty_usa || 0) })
+    return m
+  })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const usPct = 100 - rowPct
+
+  const rows = sorted.map(l => {
+    const cut  = Number(cutQtys[l.id]) || 0
+    const uk   = Math.round(cut * rowPct / 100)
+    const usa  = cut - uk
+    return { ...l, cut, uk, usa }
   })
 
-  const totalUK  = splitRows.reduce((s,r) => s + r.split_uk,  0)
-  const totalUSA = splitRows.reduce((s,r) => s + r.split_usa, 0)
+  const totalCut = rows.reduce((s,r) => s + r.cut,  0)
+  const totalUK  = rows.reduce((s,r) => s + r.uk,   0)
+  const totalUSA = rows.reduce((s,r) => s + r.usa,  0)
+
+  const applySplits = async () => {
+    setSaving(true)
+    try {
+      await Promise.all(rows.map(r =>
+        updatePoLine(r.id, { cut_qty: r.cut, qty_uk: r.uk, qty_usa: r.usa })
+      ))
+      setSaved(true)
+      onSaved()
+    } catch(e) { alert(e.message) }
+    setSaving(false)
+  }
 
   const download = () => {
     const XLSX = require('xlsx')
     const data = [
-      ['Product Name', 'Size', 'Design Ref', 'Colour', 'SKU', 'Total Units', 'UK (ROW 47%)', 'USA (53%)'],
-      ...splitRows.map(r => [r.product_name, r.size, r.design_ref, r.colour_code, r.sku, (r.qty_uk||0)+(r.qty_usa||0), r.split_uk, r.split_usa]),
-      ['TOTALS', '', '', '', '', totalUK + totalUSA, totalUK, totalUSA],
+      ['Product Name', 'Size', 'SKU', 'Cut Qty', `UK ROW (${rowPct}%)`, `USA (${usPct}%)`],
+      ...rows.map(r => [r.product_name, r.size, r.sku, r.cut, r.uk, r.usa]),
+      ['TOTALS', '', '', totalCut, totalUK, totalUSA],
     ]
     const ws = XLSX.utils.aoa_to_sheet(data)
     const wb = XLSX.utils.book_new()
@@ -633,12 +662,30 @@ function SplitCalculator({ lines, currency, poId, onClose }) {
     XLSX.writeFile(wb, `${poId}-split.xlsx`)
   }
 
+  const inp = { background:T.bg, border:`1px solid ${T.border}`, borderRadius:4, padding:'3px 6px', color:T.text, fontSize:12, outline:'none', width:70, textAlign:'right' }
+
   return (
-    <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:16, marginBottom:16 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-        <div style={{ fontWeight:700, fontSize:14 }}>Warehouse Split (ROW 47% / USA 53%)</div>
-        <div style={{ display:'flex', gap:8 }}>
-          <button onClick={download} style={{ background:T.green, color:'#fff', border:'none', borderRadius:5, padding:'5px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }}>Download Excel</button>
+    <div style={{ background:T.surface, border:`1px solid ${T.accent}30`, borderRadius:8, padding:16, marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+        <div>
+          <div style={{ fontWeight:700, fontSize:14 }}>Cut Qty → Warehouse Split</div>
+          <div style={{ fontSize:12, color:T.muted, marginTop:2 }}>Enter confirmed cut quantities from supplier — splits calculate automatically</div>
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          {/* Ratio inputs */}
+          <div style={{ display:'flex', alignItems:'center', gap:6, background:T.subtle, borderRadius:6, padding:'4px 10px', fontSize:12 }}>
+            <span style={{ color:T.blue, fontWeight:700 }}>ROW</span>
+            <input type="number" value={rowPct} min={0} max={100} onChange={e=>setRowPct(Math.min(100,Math.max(0,+e.target.value)))}
+              style={{ ...inp, width:44 }} />
+            <span style={{ color:T.muted }}>%</span>
+            <span style={{ color:T.muted, margin:'0 2px' }}>/</span>
+            <span style={{ color:T.yellow, fontWeight:700 }}>USA</span>
+            <span style={{ color:T.text, fontWeight:700 }}>{usPct}%</span>
+          </div>
+          <button onClick={download} style={{ background:'none', border:`1px solid ${T.border}`, color:T.muted, borderRadius:5, padding:'5px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⬇ Excel</button>
+          <button onClick={applySplits} disabled={saving} style={{ background:saved?T.green:T.accent, color:'#fff', border:'none', borderRadius:5, padding:'5px 14px', fontSize:12, fontWeight:700, cursor:saving?'not-allowed':'pointer', opacity:saving?0.7:1 }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Apply Splits'}
+          </button>
           <button onClick={onClose} style={{ background:'none', border:'none', color:T.muted, fontSize:18, cursor:'pointer', lineHeight:1 }}>×</button>
         </div>
       </div>
@@ -646,26 +693,36 @@ function SplitCalculator({ lines, currency, poId, onClose }) {
         <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
           <thead>
             <tr style={{ background:T.subtle }}>
-              <Th>Product</Th><Th>Size</Th>
-              <Th style={{ textAlign:'right' }}>Total</Th>
-              <Th style={{ textAlign:'right', color:'#3b82f6' }}>UK (ROW 47%)</Th>
-              <Th style={{ textAlign:'right', color:'#f59e0b' }}>USA (53%)</Th>
+              <Th>Product</Th><Th>Size</Th><Th>SKU</Th>
+              <Th style={{ textAlign:'right' }}>Ordered</Th>
+              <Th style={{ textAlign:'right', color:T.accent }}>Cut Qty</Th>
+              <Th style={{ textAlign:'right', color:T.blue }}>UK ROW {rowPct}%</Th>
+              <Th style={{ textAlign:'right', color:T.yellow }}>USA {usPct}%</Th>
             </tr>
           </thead>
           <tbody>
-            {splitRows.map((r,i) => (
+            {rows.map((r,i) => (
               <tr key={i} style={{ borderBottom:`1px solid ${T.border}` }}>
                 <Td style={{ fontWeight:600 }}>{r.product_name}</Td>
                 <Td><span style={{ background:T.subtle, borderRadius:4, padding:'2px 8px', fontSize:11, fontWeight:700 }}>{r.size}</span></Td>
-                <Td style={{ textAlign:'right' }}>{((r.qty_uk||0)+(r.qty_usa||0)).toLocaleString()}</Td>
-                <Td style={{ textAlign:'right', color:'#3b82f6', fontWeight:600 }}>{r.split_uk.toLocaleString()}</Td>
-                <Td style={{ textAlign:'right', color:'#f59e0b', fontWeight:600 }}>{r.split_usa.toLocaleString()}</Td>
+                <Td style={{ color:T.muted, fontFamily:'monospace', fontSize:11 }}>{r.sku||'—'}</Td>
+                <Td style={{ textAlign:'right', color:T.muted }}>{((r.qty_uk||0)+(r.qty_usa||0)).toLocaleString()}</Td>
+                <Td style={{ textAlign:'right' }}>
+                  <input
+                    type="number" min={0} value={cutQtys[r.id] ?? ''}
+                    onChange={e => setCutQtys(q => ({ ...q, [r.id]: e.target.value }))}
+                    style={inp}
+                  />
+                </Td>
+                <Td style={{ textAlign:'right', color:T.blue, fontWeight:600 }}>{r.cut > 0 ? r.uk.toLocaleString() : <span style={{ color:T.muted }}>—</span>}</Td>
+                <Td style={{ textAlign:'right', color:T.yellow, fontWeight:600 }}>{r.cut > 0 ? r.usa.toLocaleString() : <span style={{ color:T.muted }}>—</span>}</Td>
               </tr>
             ))}
             <tr style={{ background:T.surface, borderTop:`2px solid ${T.border}` }}>
-              <Td colSpan={3} style={{ fontWeight:700 }}>TOTALS</Td>
-              <Td style={{ textAlign:'right', color:'#3b82f6', fontWeight:800 }}>{totalUK.toLocaleString()}</Td>
-              <Td style={{ textAlign:'right', color:'#f59e0b', fontWeight:800 }}>{totalUSA.toLocaleString()}</Td>
+              <Td colSpan={4} style={{ fontWeight:700 }}>TOTALS</Td>
+              <Td style={{ textAlign:'right', fontWeight:800, color:T.accent }}>{totalCut.toLocaleString()}</Td>
+              <Td style={{ textAlign:'right', color:T.blue, fontWeight:800 }}>{totalUK.toLocaleString()}</Td>
+              <Td style={{ textAlign:'right', color:T.yellow, fontWeight:800 }}>{totalUSA.toLocaleString()}</Td>
             </tr>
           </tbody>
         </table>
