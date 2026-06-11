@@ -37,10 +37,11 @@ export default function SalesPage() {
   const [rows, setRows]     = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]   = useState('')
-  const [days, setDays]       = useState(7)
+  const [days, setDays]           = useState(7)
   const [startDate, setStartDate] = useState(daysAgo(7))
   const [endDate, setEndDate]     = useState(today())
   const [isCustom, setIsCustom]   = useState(false)
+  const [store, setStore]         = useState('row')
   const [search, setSearch] = useState('')
   const [sortCol, setSortCol] = useState('revenue')
   const [sortAsc, setSortAsc] = useState(false)
@@ -48,9 +49,10 @@ export default function SalesPage() {
   useEffect(() => {
     setLoading(true)
     setError('')
-    const url = isCustom
+    const base = isCustom
       ? `/api/sales-data?startDate=${startDate}&endDate=${endDate}`
       : `/api/sales-data?days=${days}`
+    const url = `${base}&store=${store}`
     fetch(url)
       .then(r => r.json())
       .then(data => {
@@ -59,7 +61,7 @@ export default function SalesPage() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [days, startDate, endDate, isCustom])
+  }, [days, startDate, endDate, isCustom, store])
 
   const filtered = useMemo(() => {
     let r = rows
@@ -104,9 +106,20 @@ export default function SalesPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 800, fontSize: 26, letterSpacing: '-0.3px', color: T.text }}>Sales Dashboard</div>
-          <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Google Analytics 4 · Top products</div>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Google Analytics 4 · {store === 'row' ? 'ROW' : store === 'us' ? 'US' : 'ROW + US combined'}</div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: 3 }}>
+            {[['row', 'ROW'], ['us', 'US'], ['both', 'Both']].map(([val, label]) => (
+              <button key={val} onClick={() => setStore(val)} style={{
+                background: store === val ? T.accent : 'transparent',
+                color: store === val ? '#fff' : T.muted,
+                border: 'none', borderRadius: 5, padding: '5px 12px',
+                fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                transition: 'background 0.15s, color 0.15s',
+              }}>{label}</button>
+            ))}
+          </div>
           <div style={{ display: 'flex', gap: 4, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, padding: 3 }}>
             {RANGES.map(r => (
               <button key={r.days} onClick={() => { setDays(r.days); setIsCustom(false) }} style={{

@@ -47,11 +47,59 @@ const shiftDate = (dateStr, days) => {
   return d.toISOString().slice(0, 10)
 }
 
+async function fetchGA4(propertyId, body, token) {
+  const res = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  )
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.error?.message || 'GA4 API error')
+  }
+  return res.json()
+}
+
+function parseGA4Rows(data) {
+  const grouped = {}
+  for (const row of (data.rows || [])) {
+    const name  = row.dimensionValues[0]?.value || ''
+    const id    = row.dimensionValues[1]?.value || ''
+    const range = row.dimensionValues[2]?.value || 'current'
+    const key   = `${name}||${id}`
+    if (!grouped[key]) grouped[key] = { item_name: name, item_id: id }
+    const mv = row.metricValues.map(m => parseFloat(m.value) || 0)
+    const isCurrent = range === 'current' || range === 'date_range_0'
+    if (isCurrent) {
+      grouped[key].revenue   = (grouped[key].revenue   || 0) + mv[0]
+      grouped[key].purchased = (grouped[key].purchased || 0) + mv[1]
+      grouped[key].viewed    = (grouped[key].viewed    || 0) + mv[2]
+    } else {
+      grouped[key].revenue_prev   = (grouped[key].revenue_prev   || 0) + mv[0]
+      grouped[key].purchased_prev = (grouped[key].purchased_prev || 0) + mv[1]
+      grouped[key].viewed_prev    = (grouped[key].viewed_prev    || 0) + mv[2]
+    }
+  }
+  return Object.values(grouped).map(r => ({
+    ...r,
+    revenue_prev:   r.revenue_prev   ?? 0,
+    purchased_prev: r.purchased_prev ?? 0,
+    viewed_prev:    r.viewed_prev    ?? 0,
+  }))
+}
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url)
-    const propertyId = process.env.GA4_PROPERTY_ID
-    if (!propertyId) throw new Error('GA4_PROPERTY_ID not set')
+    const store = searchParams.get('store') || 'row'
+
+    const propRow = process.env.GA4_PROPERTY_ID
+    const propUS  = process.env.GA4_PROPERTY_ID_US
+    if (!propRow) throw new Error('GA4_PROPERTY_ID not set')
+    if (store === 'us' && !propUS) throw new Error('GA4_PROPERTY_ID_US not set')
 
     const token = await getAccessToken()
 
@@ -61,81 +109,57 @@ export async function GET(req) {
       endDate   = searchParams.get('endDate')
     } else {
       const days = parseInt(searchParams.get('days') || '7')
-      const today = new Date().toISOString().slice(0, 10)
-      endDate   = today
-      startDate = shiftDate(today, -days)
+      const todayStr = new Date().toISOString().slice(0, 10)
+      endDate   = todayStr
+      startDate = shiftDate(todayStr, -days)
     }
 
-    const diffDays = Math.round((new Date(endDate) - new Date(startDate)) / 86400000)
+    const diffDays  = Math.round((new Date(endDate) - new Date(startDate)) / 86400000)
     const prevEnd   = shiftDate(startDate, -1)
     const prevStart = shiftDate(prevEnd, -diffDays)
 
     const body = {
-      dimensions: [
-        { name: 'itemName' },
-        { name: 'itemId' },
-      ],
-      metrics: [
-        { name: 'itemRevenue' },
-        { name: 'itemsPurchased' },
-        { name: 'itemsViewed' },
-      ],
+      dimensions: [{ name: 'itemName' }, { name: 'itemId' }],
+      metrics: [{ name: 'itemRevenue' }, { name: 'itemsPurchased' }, { name: 'itemsViewed' }],
       dateRanges: [
-        { startDate, endDate,   name: 'current' },
+        { startDate, endDate, name: 'current' },
         { startDate: prevStart, endDate: prevEnd, name: 'previous' },
       ],
       orderBys: [{ metric: { metricName: 'itemRevenue' }, desc: true }],
       limit: 100,
     }
 
-    const res = await fetch(
-      `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+    let rows
+    if (store === 'both') {
+      if (!propUS) throw new Error('GA4_PROPERTY_ID_US not set')
+      const [dataRow, dataUS] = await Promise.all([
+        fetchGA4(propRow, body, token),
+        fetchGA4(propUS,  body, token),
+      ])
+      const rowRows = parseGA4Rows(dataRow)
+      const usRows  = parseGA4Rows(dataUS)
+      // Merge by item_id, summing metrics
+      const merged = {}
+      for (const r of [...rowRows, ...usRows]) {
+        const key = r.item_id || r.item_name
+        if (!merged[key]) merged[key] = { ...r }
+        else {
+          merged[key].revenue       += r.revenue
+          merged[key].purchased     += r.purchased
+          merged[key].viewed        += r.viewed
+          merged[key].revenue_prev  += r.revenue_prev
+          merged[key].purchased_prev += r.purchased_prev
+          merged[key].viewed_prev   += r.viewed_prev
+        }
       }
-    )
-
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error?.message || 'GA4 API error')
+      rows = Object.values(merged).sort((a, b) => b.revenue - a.revenue)
+    } else {
+      const propId = store === 'us' ? propUS : propRow
+      const data = await fetchGA4(propId, body, token)
+      rows = parseGA4Rows(data).sort((a, b) => b.revenue - a.revenue)
     }
 
-    const data = await res.json()
-
-    // GA4 adds dateRange as an extra dimension when multiple ranges requested.
-    // Each product appears twice: once for "current", once for "previous".
-    const grouped = {}
-    for (const row of (data.rows || [])) {
-      const name  = row.dimensionValues[0]?.value || ''
-      const id    = row.dimensionValues[1]?.value || ''
-      const range = row.dimensionValues[2]?.value || 'current'
-      const key   = `${name}||${id}`
-      if (!grouped[key]) grouped[key] = { item_name: name, item_id: id }
-      const mv = row.metricValues.map(m => parseFloat(m.value) || 0)
-      const isCurrent = range === 'current' || range === 'date_range_0'
-      if (isCurrent) {
-        grouped[key].revenue   = mv[0]
-        grouped[key].purchased = mv[1]
-        grouped[key].viewed    = mv[2]
-      } else {
-        grouped[key].revenue_prev   = mv[0]
-        grouped[key].purchased_prev = mv[1]
-        grouped[key].viewed_prev    = mv[2]
-      }
-    }
-
-    const rows = Object.values(grouped)
-      .map(r => ({
-        ...r,
-        revenue_prev:   r.revenue_prev   ?? 0,
-        purchased_prev: r.purchased_prev ?? 0,
-        viewed_prev:    r.viewed_prev    ?? 0,
-      }))
-      .sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
-
-    return NextResponse.json({ rows, startDate, endDate })
+    return NextResponse.json({ rows, startDate, endDate, store })
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
