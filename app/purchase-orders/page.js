@@ -1170,6 +1170,7 @@ function PurchaseOrdersPage() {
   const [supplierFilter, setSupplierFilter] = useState('All')
   const [seasonFilter, setSeasonFilter] = useState('All')
   const [splitFilter, setSplitFilter] = useState('All')
+  const [checklistFilter, setChecklistFilter] = useState({ skus_created: false, barcodes_sent: false, polybags_sent: false })
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState(null)
   const [splitting, setSplitting] = useState(null)
@@ -1221,7 +1222,10 @@ function PurchaseOrdersPage() {
     const matchSeason = seasonFilter==='All' || (po.seasonality||'—')===seasonFilter
     const isUnsplit = !(po.shipments?.length>0) && !po.po_splits_confirmed
     const matchSplit = splitFilter==='All' || (splitFilter==='unsplit' ? isUnsplit : !isUnsplit)
-    return matchSearch && matchSupplier && matchSeason && matchSplit
+    const matchChecklist = (!checklistFilter.skus_created || !po.skus_created) &&
+                           (!checklistFilter.barcodes_sent || !po.barcodes_sent) &&
+                           (!checklistFilter.polybags_sent || !po.polybags_sent)
+    return matchSearch && matchSupplier && matchSeason && matchSplit && matchChecklist
   })
 
   const markSynced = () => {
@@ -1342,7 +1346,7 @@ function PurchaseOrdersPage() {
           {/* View toggle */}
           <div style={{ display:'flex', border:`1px solid ${T.border}`, borderRadius:5, overflow:'hidden', marginRight:8 }}>
             {[{id:'shipments',label:'Shipments'},{id:'pos',label:'POs in Production'}].map(v=>(
-              <button key={v.id} onClick={()=>{ setView(v.id); setSupplierFilter('All'); setSeasonFilter('All'); setSplitFilter('All'); setFfFilter('All'); setStatusFilter('All'); setDcFilter('All') }} style={{ background:view===v.id?T.accent:'transparent', color:view===v.id?'#fff':T.muted, border:'none', padding:'5px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>{v.label}</button>
+              <button key={v.id} onClick={()=>{ setView(v.id); setSupplierFilter('All'); setSeasonFilter('All'); setSplitFilter('All'); setFfFilter('All'); setStatusFilter('All'); setDcFilter('All'); setChecklistFilter({skus_created:false,barcodes_sent:false,polybags_sent:false}) }} style={{ background:view===v.id?T.accent:'transparent', color:view===v.id?'#fff':T.muted, border:'none', padding:'5px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>{v.label}</button>
             ))}
           </div>
 
@@ -1379,6 +1383,17 @@ function PurchaseOrdersPage() {
               <option value="unsplit">Not Split</option>
               <option value="split">Split</option>
             </select>
+            <div style={{ width:1, height:20, background:T.border }} />
+            {[{field:'skus_created',label:'SKU'},{field:'barcodes_sent',label:'BAR'},{field:'polybags_sent',label:'POL'}].map(c=>{
+              const on = checklistFilter[c.field]
+              return (
+                <button key={c.field} onClick={()=>setChecklistFilter(f=>({...f,[c.field]:!f[c.field]}))}
+                  title={on ? `Show only missing: ${c.label}` : `Filter: missing ${c.label}`}
+                  style={{ background:on?'#ef444420':T.subtle, color:on?'#ef4444':T.muted, border:`1px solid ${on?'#ef444440':T.border}`, borderRadius:4, padding:'4px 10px', fontSize:11, fontWeight:800, cursor:'pointer' }}>
+                  {on?'○':'✓'} {c.label}
+                </button>
+              )
+            })}
           </>}
         </div>
 
