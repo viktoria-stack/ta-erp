@@ -46,7 +46,7 @@ async function getAccessToken() {
 }
 
 async function fetchSheet(sheetName, token) {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}!A:E`
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}!A:Z`
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) {
     const err = await res.json()
@@ -89,12 +89,17 @@ function parseSheet(values) {
   for (const row of values.slice(headerIdx + 1)) {
     const sku = norm(row[iSku] ?? '')
     if (!sku) continue
-    result[sku] = {
-      title: String(row[iTitle] ?? '').trim(),
-      sku,
-      qty:   iQty   >= 0 ? (parseFloat(row[iQty])   || 0) : 0,
-      price: iPrice >= 0 ? (parseFloat(row[iPrice])  || 0) : 0,
-      cost:  iCost  >= 0 ? (parseFloat(row[iCost])   || 0) : 0,
+    const qty = iQty >= 0 ? (parseFloat(row[iQty]) || 0) : 0
+    if (result[sku]) {
+      result[sku].qty += qty
+    } else {
+      result[sku] = {
+        title: String(row[iTitle] ?? '').trim(),
+        sku,
+        qty,
+        price: iPrice >= 0 ? (parseFloat(row[iPrice]) || 0) : 0,
+        cost:  iCost  >= 0 ? (parseFloat(row[iCost])  || 0) : 0,
+      }
     }
   }
   return result
@@ -112,11 +117,19 @@ export async function GET(req) {
     ])
 
     if (debug) {
+      const skuFilter = searchParams.get('sku')?.toLowerCase()
+      const filterRows = (values) => {
+        if (!skuFilter) return values.slice(0, 6)
+        const header = values[0] || []
+        const skuCol = header.findIndex(h => norm(h).includes('variant sku'))
+        return [header, ...values.slice(1).filter(r => norm(r[skuCol] ?? '').includes(skuFilter))]
+      }
       return NextResponse.json({
         row_headers: rowValues[0] || [],
-        row_sample:  rowValues.slice(0, 4),
+        row_data:    filterRows(rowValues),
         us_headers:  usValues[0]  || [],
-        us_sample:   usValues.slice(0, 4),
+        us_data:     filterRows(usValues),
+        col_count:   { row: (rowValues[0] || []).length, us: (usValues[0] || []).length },
       })
     }
 
