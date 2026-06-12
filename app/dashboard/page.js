@@ -208,7 +208,7 @@ export default function DashboardPage() {
         <KPIBox label="In Production" value={inProductionPOs.length} color={T.yellow} onClick={() => router.push('/purchase-orders?view=pos')} />
         <KPIBox label="In Transit" value={inTransit.length} color={T.blue} onClick={() => router.push('/purchase-orders')} />
         <KPIBox label="Booked In" value={bookedIn.length} color={T.green} onClick={() => router.push('/purchase-orders')} />
-        <KPIBox label="🇬🇧 UK Stock" value={totalUK.toLocaleString()} color="#3b82f6" onClick={() => router.push('/inventory')} />
+        <KPIBox label="🇬🇧 ROW Stock" value={totalUK.toLocaleString()} color="#3b82f6" onClick={() => router.push('/inventory')} />
         <KPIBox label="🇺🇸 US Stock" value={totalUS.toLocaleString()} color="#8b5cf6" onClick={() => router.push('/inventory')} />
       </div>
 
@@ -344,7 +344,7 @@ export default function DashboardPage() {
           <div style={{ padding: '16px 18px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               {[
-                { label: '🇬🇧 UK Total Units', value: totalUK.toLocaleString(), color: '#3b82f6' },
+                { label: '🇬🇧 ROW Total Units', value: totalUK.toLocaleString(), color: '#3b82f6' },
                 { label: '🇺🇸 US Total Units', value: totalUS.toLocaleString(), color: '#8b5cf6' },
                 { label: '⚠ Low Stock SKUs', value: lowStock.toLocaleString(), color: lowStock > 0 ? T.yellow : T.green },
                 { label: '✕ Out of Stock', value: outOfStock.toLocaleString(), color: outOfStock > 0 ? T.red : T.green },
@@ -357,7 +357,7 @@ export default function DashboardPage() {
             </div>
             {/* UK vs US bar */}
             <div style={{ fontSize: 11, color: T.muted, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
-              <span><span style={{ color: '#3b82f6' }}>■</span> UK {totalUK > 0 ? Math.round(totalUK / (totalUK + totalUS) * 100) : 0}%</span>
+              <span><span style={{ color: '#3b82f6' }}>■</span> ROW {totalUK > 0 ? Math.round(totalUK / (totalUK + totalUS) * 100) : 0}%</span>
               <span><span style={{ color: '#8b5cf6' }}>■</span> US {totalUS > 0 ? Math.round(totalUS / (totalUK + totalUS) * 100) : 0}%</span>
             </div>
             <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden' }}>

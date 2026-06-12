@@ -244,7 +244,7 @@ export default function InventoryPage() {
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
         <KPI label="Total SKUs" value={kpis ? kpis.total_skus?.toLocaleString() : '…'} />
-        <KPI label="🇬🇧 UK Units" value={kpis ? kpis.total_uk?.toLocaleString() : '…'} color="#3b82f6" />
+        <KPI label="🇬🇧 ROW Units" value={kpis ? kpis.total_uk?.toLocaleString() : '…'} color="#3b82f6" />
         <KPI label="🇺🇸 US Units" value={kpis ? kpis.total_us?.toLocaleString() : '…'} color="#8b5cf6" />
         <KPI label="Low Stock" value={kpis ? kpis.low_stock?.toLocaleString() : '…'} color={T.yellow} />
         <KPI label="Out of Stock" value={kpis ? kpis.out_of_stock?.toLocaleString() : '…'} color={T.red} />
@@ -263,7 +263,7 @@ export default function InventoryPage() {
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {[
               { id: 'All', label: 'All' },
-              { id: 'UK', label: '🇬🇧 UK in stock' },
+              { id: 'UK', label: '🇬🇧 ROW in stock' },
               { id: 'US', label: '🇺🇸 US in stock' },
               { id: 'Low stock', label: '⚠ Low stock' },
               { id: 'Out of stock', label: '✕ Out of stock' },
@@ -291,7 +291,7 @@ export default function InventoryPage() {
               <thead>
                 <tr style={{ background: T.surface }}>
                   <Th>Product Name</Th><Th>Size</Th><Th>SKU</Th><Th>Barcode</Th>
-                  <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 UK</Th>
+                  <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 ROW</Th>
                   <Th style={{ textAlign: 'right', color: '#8b5cf6' }}>🇺🇸 US</Th>
                   <Th style={{ textAlign: 'right' }}>Total</Th>
                   <Th style={{ textAlign: 'right' }}>Cost</Th>
@@ -447,7 +447,7 @@ export default function InventoryPage() {
               <thead>
                 <tr style={{ background: T.surface }}>
                   <Th>Product Name</Th><Th>SKU</Th>
-                  <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 UK</Th>
+                  <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 ROW</Th>
                   <Th style={{ textAlign: 'right', color: '#8b5cf6' }}>🇺🇸 US</Th>
                   <Th style={{ textAlign: 'right' }}>Total</Th>
                 </tr>
@@ -478,7 +478,7 @@ export default function InventoryPage() {
           </div>
           {!snapLoading && !snapError && snapData.length > 0 && (
             <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', gap: 20 }}>
-              <span style={{ fontSize: 12, color: T.muted }}>🇬🇧 UK total: <strong style={{ color: '#3b82f6' }}>{snapData.reduce((s, r) => s + (r.qty_uk || 0), 0).toLocaleString()}</strong></span>
+              <span style={{ fontSize: 12, color: T.muted }}>🇬🇧 ROW total: <strong style={{ color: '#3b82f6' }}>{snapData.reduce((s, r) => s + (r.qty_uk || 0), 0).toLocaleString()}</strong></span>
               <span style={{ fontSize: 12, color: T.muted }}>🇺🇸 US total: <strong style={{ color: '#8b5cf6' }}>{snapData.reduce((s, r) => s + (r.qty_us || 0), 0).toLocaleString()}</strong></span>
             </div>
           )}
