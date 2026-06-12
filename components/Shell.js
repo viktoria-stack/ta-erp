@@ -19,6 +19,7 @@ const ICONS = {
   suppliers:  <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
   invoices:   <><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></>,
   sales:      <><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></>,
+  cashflow:   <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>,
   search:     <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
   chevronL:   <><polyline points="15 18 9 12 15 6"/></>,
   chevronR:   <><polyline points="9 18 15 12 9 6"/></>,
@@ -31,6 +32,7 @@ const NAV = [
   { href: '/inventory',       label: 'Inventory',       icon: 'inventory' },
   { href: '/suppliers',       label: 'Suppliers',       icon: 'suppliers' },
   { href: '/invoices',        label: 'Invoices',        icon: 'invoices'  },
+  { href: '/cashflow',        label: 'Cashflow',        icon: 'cashflow'  },
   { href: '/sales',           label: 'Sales',           icon: 'sales'     },
 ]
 

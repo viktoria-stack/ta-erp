@@ -55,6 +55,29 @@ const DCBadge = ({ dc }) => (
   <span style={{ background: dc === 'UK' ? '#3b82f620' : '#8b5cf620', color: dc === 'UK' ? '#3b82f6' : '#8b5cf6', border: `1px solid ${dc === 'UK' ? '#3b82f640' : '#8b5cf640'}`, borderRadius: 3, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{dc}</span>
 )
 
+function Sparkline({ values, color, width = 200, height = 40 }) {
+  if (!values || values.length < 2) return null
+  const max = Math.max(...values), min = Math.min(...values)
+  const range = max - min || 1
+  const pts = values.map((v, i) =>
+    `${(i / (values.length - 1)) * width},${height - ((v - min) / range) * (height - 4) - 2}`
+  ).join(' ')
+  const areaBot = `${width},${height} 0,${height}`
+  return (
+    <svg width={width} height={height} style={{ overflow: 'visible', display: 'block' }}>
+      <defs>
+        <linearGradient id={`sg${color.replace('#','')}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,${height - ((values[0]-min)/range)*(height-4)-2} ${pts} ${areaBot}`}
+        fill={`url(#sg${color.replace('#','')})`} />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 function Section({ title, link, children, router }) {
   return (
     <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -86,6 +109,7 @@ export default function DashboardPage() {
   const [countdown, setCountdown] = useState(30)
   const [sheetTotals, setSheetTotals] = useState(null)
   const [topSales, setTopSales] = useState({ row: [], us: [] })
+  const [trend, setTrend] = useState(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -111,6 +135,13 @@ export default function DashboardPage() {
         us:  (usData.rows  || []).slice(0, 5),
       })
     }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/sales-trend?days=30&store=both')
+      .then(r => r.json())
+      .then(d => { if (d.dates) setTrend(d) })
+      .catch(() => {})
   }, [])
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -202,15 +233,20 @@ export default function DashboardPage() {
   // ── Supplier stats
   const activeSuppliers = suppliers.filter(s => s.status === 'Active')
 
-  // ── Shipments per supplier (from PO data)
+  // ── Shipments per supplier (from PO data) + on-time %
   const supplierShipments = {}
   for (const sh of shipments) {
     const po = pos.find(p => p.id === sh.po_id)
     const name = po?.supplier_name || 'Unknown'
-    if (!supplierShipments[name]) supplierShipments[name] = { name, count: 0, inTransit: 0, inProduction: 0 }
+    if (!supplierShipments[name]) supplierShipments[name] = { name, count: 0, inTransit: 0, inProduction: 0, onTimeCount: 0, deliveredCount: 0 }
     supplierShipments[name].count++
     if (sh.status?.includes('transit')) supplierShipments[name].inTransit++
     if (sh.status === 'In production') supplierShipments[name].inProduction++
+    const actual = sh.booked_in_date || sh.delivery_date
+    if (sh.eta && actual) {
+      supplierShipments[name].deliveredCount++
+      if (actual <= sh.eta) supplierShipments[name].onTimeCount++
+    }
   }
   const topSuppliers = Object.values(supplierShipments).sort((a, b) => b.count - a.count).slice(0, 5)
 
@@ -227,6 +263,27 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Revenue trend sparkline ── */}
+      {trend && (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '16px 20px', marginBottom: 16, display: 'flex', gap: 32, alignItems: 'center' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 6 }}>🇬🇧 ROW Revenue — last 30 days</div>
+            <Sparkline values={trend.row} color="#3b82f6" width={300} height={44} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.border, marginTop: 2 }}>
+              <span>{trend.dates[0]?.slice(5)}</span><span>{trend.dates[trend.dates.length-1]?.slice(5)}</span>
+            </div>
+          </div>
+          <div style={{ width: 1, height: 60, background: T.border }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 6 }}>🇺🇸 US Revenue — last 30 days</div>
+            <Sparkline values={trend.us} color="#8b5cf6" width={300} height={44} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.border, marginTop: 2 }}>
+              <span>{trend.dates[0]?.slice(5)}</span><span>{trend.dates[trend.dates.length-1]?.slice(5)}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── TOP KPIs ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10, marginBottom: 20 }}>
@@ -399,7 +456,7 @@ export default function DashboardPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: T.surface }}>
-                <Th>Code</Th><Th>Supplier</Th><Th style={{ textAlign: 'right' }}>Shipments</Th><Th style={{ textAlign: 'right' }}>In Transit</Th>
+                <Th>Code</Th><Th>Supplier</Th><Th style={{ textAlign: 'right' }}>Shipments</Th><Th style={{ textAlign: 'right' }}>In Transit</Th><Th style={{ textAlign: 'right' }}>On-Time</Th>
               </tr>
             </thead>
             <tbody>
@@ -413,6 +470,11 @@ export default function DashboardPage() {
                   <Td style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</Td>
                   <Td style={{ textAlign: 'right', fontWeight: 700 }}>{s.count}</Td>
                   <Td style={{ textAlign: 'right', color: s.inTransit > 0 ? T.blue : T.muted, fontWeight: s.inTransit > 0 ? 700 : 400 }}>{s.inTransit}</Td>
+                  <Td style={{ textAlign: 'right' }}>
+                    {s.deliveredCount > 0
+                      ? (() => { const pct = Math.round(s.onTimeCount / s.deliveredCount * 100); return <span style={{ fontWeight: 700, color: pct >= 80 ? T.green : pct >= 60 ? T.yellow : T.red }}>{pct}%</span> })()
+                      : <span style={{ color: T.border, fontSize: 12 }}>—</span>}
+                  </Td>
                 </tr>
               ))}
               {topSuppliers.length === 0 && (

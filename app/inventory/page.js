@@ -358,6 +358,7 @@ export default function InventoryPage() {
                   <Th style={{ textAlign: 'right' }}>Total</Th>
                   <Th style={{ textAlign: 'right' }}>Cost</Th>
                   <Th style={{ textAlign: 'right' }}>Retail</Th>
+                  <Th style={{ textAlign: 'right' }}>Margin</Th>
                   <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 Incoming</Th>
                   <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 Restock</Th>
                   <Th style={{ textAlign: 'right', color: '#8b5cf6' }}>🇺🇸 Incoming</Th>
@@ -368,11 +369,11 @@ export default function InventoryPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={15} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
+                  <tr><td colSpan={16} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                     <div style={{ display: 'inline-block', width: 20, height: 20, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
                   </td></tr>
                 ) : items.length === 0 ? (
-                  <tr><td colSpan={15} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
+                  <tr><td colSpan={16} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                     {search ? 'No results for your search' : 'No inventory data'}
                   </td></tr>
                 ) : [...items].sort((a, b) => {
@@ -409,6 +410,12 @@ export default function InventoryPage() {
                       <Td style={{ textAlign: 'right', fontWeight: 700, color: tot === 0 ? T.red : tot < 20 ? T.yellow : T.text }}>{tot.toLocaleString()}</Td>
                       <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{p.cost_price ? fmt(p.cost_price, 'GBP') : '—'}</Td>
                       <Td style={{ textAlign: 'right', color: T.accent, fontSize: 12 }}>{p.retail_price ? fmt(p.retail_price, 'GBP') : '—'}</Td>
+                      {(() => {
+                        if (!p.cost_price || !p.retail_price) return <Td style={{ textAlign: 'right', color: T.border, fontSize: 12 }}>—</Td>
+                        const margin = ((p.retail_price - p.cost_price) / p.retail_price) * 100
+                        const color = margin >= 80 ? T.green : margin >= 60 ? T.yellow : T.red
+                        return <Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color }}>{margin.toFixed(0)}%</Td>
+                      })()}
                       <Td style={{ textAlign: 'right', color: '#3b82f6', fontWeight: p.incoming_uk > 0 ? 700 : 400 }}>{p.incoming_uk > 0 ? `+${p.incoming_uk}` : '—'}</Td>
                       <Td style={{ textAlign: 'right', fontSize: 12 }}>
                         {p.restock_date_uk ? <span style={{ color: new Date(p.restock_date_uk) < new Date(Date.now() + 30*864e5) ? T.green : T.muted, fontWeight: 600 }}>{new Date(p.restock_date_uk).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' })}</span> : <span style={{ color: p.qty_uk === 0 ? T.red : T.border }}>—</span>}
