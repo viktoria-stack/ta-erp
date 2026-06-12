@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Shell from '@/components/Shell'
 import { T, Th, Td, Loading, fmt } from '@/components/ui'
@@ -55,26 +55,67 @@ const DCBadge = ({ dc }) => (
   <span style={{ background: dc === 'UK' ? '#3b82f620' : '#8b5cf620', color: dc === 'UK' ? '#3b82f6' : '#8b5cf6', border: `1px solid ${dc === 'UK' ? '#3b82f640' : '#8b5cf640'}`, borderRadius: 3, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{dc}</span>
 )
 
-function Sparkline({ values, color, width = 200, height = 40 }) {
+const fmtGBP = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(n || 0)
+
+function Sparkline({ values, dates, color, width = 200, height = 40 }) {
+  const [hoverIdx, setHoverIdx] = useState(null)
+  const svgRef = useRef(null)
   if (!values || values.length < 2) return null
   const max = Math.max(...values), min = Math.min(...values)
   const range = max - min || 1
-  const pts = values.map((v, i) =>
-    `${(i / (values.length - 1)) * width},${height - ((v - min) / range) * (height - 4) - 2}`
-  ).join(' ')
+  const xOf = i => (i / (values.length - 1)) * width
+  const yOf = v => height - ((v - min) / range) * (height - 4) - 2
+  const pts = values.map((v, i) => `${xOf(i)},${yOf(v)}`).join(' ')
   const areaBot = `${width},${height} 0,${height}`
+  const gradId = `sg${color.replace('#', '')}`
+
+  const handleMouseMove = (e) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const x = e.clientX - rect.left
+    const idx = Math.round((x / width) * (values.length - 1))
+    setHoverIdx(Math.max(0, Math.min(values.length - 1, idx)))
+  }
+
+  const hx = hoverIdx !== null ? xOf(hoverIdx) : null
+  const hy = hoverIdx !== null ? yOf(values[hoverIdx]) : null
+  const tooltipLeft = hoverIdx !== null && hx > width * 0.7
+
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''
+
   return (
-    <svg width={width} height={height} style={{ overflow: 'visible', display: 'block' }}>
-      <defs>
-        <linearGradient id={`sg${color.replace('#','')}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={`0,${height - ((values[0]-min)/range)*(height-4)-2} ${pts} ${areaBot}`}
-        fill={`url(#sg${color.replace('#','')})`} />
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
-    </svg>
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <svg ref={svgRef} width={width} height={height}
+        style={{ overflow: 'visible', display: 'block', cursor: 'crosshair' }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverIdx(null)}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon points={`0,${yOf(values[0])} ${pts} ${areaBot}`} fill={`url(#${gradId})`} />
+        <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+        {hoverIdx !== null && <>
+          <line x1={hx} y1={0} x2={hx} y2={height} stroke={color} strokeWidth="1" strokeDasharray="3,2" opacity="0.6" />
+          <circle cx={hx} cy={hy} r="4" fill={color} stroke="#1a1a2e" strokeWidth="2" />
+        </>}
+      </svg>
+      {hoverIdx !== null && (
+        <div style={{
+          position: 'absolute', top: -8,
+          left: tooltipLeft ? hx - 110 : hx + 10,
+          background: T.card, border: `1px solid ${color}60`,
+          borderRadius: 6, padding: '5px 10px',
+          pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 10,
+          boxShadow: '0 4px 12px #0006',
+        }}>
+          <div style={{ fontSize: 10, color: T.muted, marginBottom: 2 }}>{fmtDate(dates?.[hoverIdx])}</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color, fontFamily: 'Barlow Condensed' }}>{fmtGBP(values[hoverIdx])}</div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -269,7 +310,7 @@ export default function DashboardPage() {
         <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '16px 20px', marginBottom: 16, display: 'flex', gap: 32, alignItems: 'center' }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 6 }}>🇬🇧 ROW Revenue — last 30 days</div>
-            <Sparkline values={trend.row} color="#3b82f6" width={300} height={44} />
+            <Sparkline values={trend.row} dates={trend.dates} color="#3b82f6" width={300} height={44} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.border, marginTop: 2 }}>
               <span>{trend.dates[0]?.slice(5)}</span><span>{trend.dates[trend.dates.length-1]?.slice(5)}</span>
             </div>
@@ -277,7 +318,7 @@ export default function DashboardPage() {
           <div style={{ width: 1, height: 60, background: T.border }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 6 }}>🇺🇸 US Revenue — last 30 days</div>
-            <Sparkline values={trend.us} color="#8b5cf6" width={300} height={44} />
+            <Sparkline values={trend.us} dates={trend.dates} color="#8b5cf6" width={300} height={44} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.border, marginTop: 2 }}>
               <span>{trend.dates[0]?.slice(5)}</span><span>{trend.dates[trend.dates.length-1]?.slice(5)}</span>
             </div>
