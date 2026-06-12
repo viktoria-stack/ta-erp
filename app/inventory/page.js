@@ -137,6 +137,28 @@ export default function InventoryPage() {
       .catch(() => {})
   }, [])
 
+  // GA4 weekly sales keyed by SKU uppercase (last 7 days)
+  const [weeklySales, setWeeklySales] = useState({})
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/sales-data?days=7&store=row').then(r => r.json()),
+      fetch('/api/sales-data?days=7&store=us').then(r => r.json()),
+    ]).then(([rowData, usData]) => {
+      const map = {}
+      for (const r of (rowData.rows || [])) {
+        const k = (r.item_id || '').toUpperCase()
+        if (!map[k]) map[k] = { row: 0, us: 0 }
+        map[k].row = r.purchased || 0
+      }
+      for (const r of (usData.rows || [])) {
+        const k = (r.item_id || '').toUpperCase()
+        if (!map[k]) map[k] = { row: 0, us: 0 }
+        map[k].us = r.purchased || 0
+      }
+      setWeeklySales(map)
+    }).catch(() => {})
+  }, [])
+
   // ── Live data
   const load = useCallback(async (s, st, p) => {
     setLoading(true); setError('')
@@ -315,22 +337,32 @@ export default function InventoryPage() {
                   <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 Restock</Th>
                   <Th style={{ textAlign: 'right', color: '#8b5cf6' }}>🇺🇸 Incoming</Th>
                   <Th style={{ textAlign: 'right', color: '#8b5cf6' }}>🇺🇸 Restock</Th>
+                  <Th style={{ textAlign: 'right', color: T.muted }}>🇬🇧 Cover</Th>
+                  <Th style={{ textAlign: 'right', color: T.muted }}>🇺🇸 Cover</Th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={13} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
+                  <tr><td colSpan={15} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                     <div style={{ display: 'inline-block', width: 20, height: 20, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
                   </td></tr>
                 ) : items.length === 0 ? (
-                  <tr><td colSpan={13} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
+                  <tr><td colSpan={15} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                     {search ? 'No results for your search' : 'No inventory data'}
                   </td></tr>
                 ) : items.map((p, i) => {
-                  const sq = sheetQty[(p.sku || '').toUpperCase()] || {}
+                  const sq   = sheetQty[(p.sku || '').toUpperCase()] || {}
+                  const ws   = weeklySales[(p.sku || '').toUpperCase()] || {}
                   const qRow = sq.qty_uk ?? p.qty_uk ?? 0
                   const qUs  = sq.qty_us ?? p.qty_us ?? 0
                   const tot  = qRow + qUs
+                  const coverRow = ws.row > 0 ? qRow / ws.row : null
+                  const coverUs  = ws.us  > 0 ? qUs  / ws.us  : null
+                  const CoverCell = ({ weeks }) => {
+                    if (weeks === null) return <Td style={{ textAlign: 'right', color: T.border, fontSize: 12 }}>—</Td>
+                    const color = weeks < 4 ? T.red : weeks < 8 ? T.yellow : T.green
+                    return <Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color }}>{weeks.toFixed(1)}w</Td>
+                  }
                   return (
                     <tr key={p.id || i} className="row-hover">
                       <Td style={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.product_name}</Td>
@@ -350,6 +382,8 @@ export default function InventoryPage() {
                       <Td style={{ textAlign: 'right', fontSize: 12 }}>
                         {p.restock_date_us ? <span style={{ color: new Date(p.restock_date_us) < new Date(Date.now() + 30*864e5) ? T.green : T.muted, fontWeight: 600 }}>{new Date(p.restock_date_us).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' })}</span> : <span style={{ color: p.qty_us === 0 ? T.red : T.border }}>—</span>}
                       </Td>
+                      <CoverCell weeks={coverRow} />
+                      <CoverCell weeks={coverUs} />
                     </tr>
                   )
                 })}
