@@ -54,7 +54,7 @@ export default function SalesPage() {
       .then(data => {
         if (data.items) {
           const map = {}
-          data.items.forEach(i => { map[i.sku] = i })
+          data.items.forEach(i => { map[i.sku.toUpperCase()] = i })
           setInventory(map)
         }
       })
@@ -232,7 +232,7 @@ export default function SalesPage() {
                     {error ? 'Error loading data' : 'No sales data found for this period'}
                   </td></tr>
                 ) : filtered.map((r, i) => {
-                  const inv = inventory[r.item_id] || null
+                  const inv = inventory[(r.item_id || '').toUpperCase()] || null
                   const stockRow = inv?.qty_row ?? null
                   const stockUs  = inv?.qty_us  ?? null
                   const StockCell = ({ qty }) => {

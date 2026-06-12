@@ -56,34 +56,45 @@ async function fetchSheet(sheetName, token) {
   return values || []
 }
 
+const norm = s => String(s).replace(/[\s ]+/g, ' ').trim().toLowerCase()
+
 function parseSheet(values) {
   if (values.length < 2) return {}
-  // Find header row — look for "Variant SKU"
+
+  // Find header row
   let headerIdx = 0
   for (let i = 0; i < Math.min(5, values.length); i++) {
-    if (values[i].some(c => String(c).toLowerCase().includes('variant sku'))) {
+    if (values[i].some(c => norm(c).includes('variant sku'))) {
       headerIdx = i
       break
     }
   }
-  const headers = values[headerIdx].map(h => String(h).trim().toLowerCase())
-  const col = key => headers.findIndex(h => h.includes(key))
+
+  const headers = values[headerIdx].map(norm)
+  const col = (...keys) => {
+    for (const key of keys) {
+      const idx = headers.findIndex(h => h.includes(key))
+      if (idx >= 0) return idx
+    }
+    return -1
+  }
+
   const iTitle = col('title')
   const iSku   = col('variant sku')
-  const iQty   = col('variant inventory qty')
-  const iPrice = col('variant price')
-  const iCost  = col('variant cost')
+  const iQty   = col('variant inventory qty', 'inventory qty', 'inventory')
+  const iPrice = col('variant price', 'price')
+  const iCost  = col('variant cost', 'cost')
 
   const result = {}
   for (const row of values.slice(headerIdx + 1)) {
-    const sku = String(row[iSku] ?? '').trim()
+    const sku = norm(row[iSku] ?? '')
     if (!sku) continue
     result[sku] = {
       title: String(row[iTitle] ?? '').trim(),
       sku,
-      qty:   parseFloat(row[iQty]   ?? 0) || 0,
-      price: parseFloat(row[iPrice] ?? 0) || 0,
-      cost:  parseFloat(row[iCost]  ?? 0) || 0,
+      qty:   iQty   >= 0 ? (parseFloat(row[iQty])   || 0) : 0,
+      price: iPrice >= 0 ? (parseFloat(row[iPrice])  || 0) : 0,
+      cost:  iCost  >= 0 ? (parseFloat(row[iCost])   || 0) : 0,
     }
   }
   return result
