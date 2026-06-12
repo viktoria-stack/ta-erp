@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import Shell from '@/components/Shell'
 import { T, KPI, Card, Th, Td, BtnPrimary, BtnGhost, Loading, ErrorMsg, fmt } from '@/components/ui'
@@ -160,6 +160,23 @@ export default function InventoryPage() {
   }, [])
 
   const [coverSort, setCoverSort] = useState(false)
+  const [abcFilter, setAbcFilter] = useState('All')
+
+  const abcMap = useMemo(() => {
+    const entries = Object.entries(weeklySales)
+      .map(([sku, v]) => ({ sku, units: (v.row || 0) + (v.us || 0) }))
+      .filter(e => e.units > 0)
+    const total = entries.reduce((s, e) => s + e.units, 0)
+    if (total === 0) return {}
+    entries.sort((a, b) => b.units - a.units)
+    let cum = 0
+    const map = {}
+    for (const e of entries) {
+      cum += e.units
+      map[e.sku] = cum / total <= 0.8 ? 'A' : cum / total <= 0.95 ? 'B' : 'C'
+    }
+    return map
+  }, [weeklySales])
 
   // ── Live data
   const load = useCallback(async (s, st, p, allForCover = false) => {
@@ -177,7 +194,7 @@ export default function InventoryPage() {
   }, [])
 
   useEffect(() => { fetchKPIs().then(setKpis).catch(() => {}) }, [])
-  useEffect(() => { load(search, store, page, coverSort) }, [search, store, page, coverSort])
+  useEffect(() => { load(search, store, page, coverSort || abcFilter !== 'All') }, [search, store, page, coverSort, abcFilter])
 
   const handleSearch = (val) => {
     setSearchInput(val)
@@ -338,6 +355,21 @@ export default function InventoryPage() {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input placeholder="Search product, SKU, barcode…" value={searchInput} onChange={e => handleSearch(e.target.value)}
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: '7px 12px', color: T.text, fontSize: 13, width: 260, outline: 'none' }} />
+            <div style={{ width: 1, height: 20, background: T.border }} />
+            {[
+              { val: 'All', label: 'All' },
+              { val: 'A', label: 'A — Top', color: '#22c55e' },
+              { val: 'B', label: 'B — Mid', color: '#f59e0b' },
+              { val: 'C', label: 'C — Slow', color: T.muted },
+            ].map(({ val, label, color }) => (
+              <button key={val} onClick={() => { setAbcFilter(val); setPage(0) }} style={{
+                background: abcFilter === val ? (color || T.accent) : T.subtle,
+                color: abcFilter === val ? (val === 'C' ? T.text : '#fff') : T.muted,
+                border: 'none', borderRadius: 4, padding: '5px 12px',
+                fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+              }}>{label}</button>
+            ))}
+            <div style={{ width: 1, height: 20, background: T.border }} />
             <button onClick={() => { setCoverSort(v => !v); setPage(0) }} style={{ background: coverSort ? T.red : T.subtle, color: coverSort ? '#fff' : T.muted, border: 'none', borderRadius: 4, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               {coverSort ? '⚠ Critical first ✓' : 'Sort by cover'}
             </button>
@@ -356,6 +388,7 @@ export default function InventoryPage() {
                   <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 ROW</Th>
                   <Th style={{ textAlign: 'right', color: '#8b5cf6' }}>🇺🇸 US</Th>
                   <Th style={{ textAlign: 'right' }}>Total</Th>
+                  <Th style={{ textAlign: 'center' }}>ABC</Th>
                   <Th style={{ textAlign: 'right' }}>Cost</Th>
                   <Th style={{ textAlign: 'right' }}>Retail</Th>
                   <Th style={{ textAlign: 'right' }}>Margin</Th>
@@ -369,14 +402,26 @@ export default function InventoryPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={16} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
+                  <tr><td colSpan={17} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                     <div style={{ display: 'inline-block', width: 20, height: 20, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
                   </td></tr>
                 ) : items.length === 0 ? (
-                  <tr><td colSpan={16} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
+                  <tr><td colSpan={17} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                     {search ? 'No results for your search' : 'No inventory data'}
                   </td></tr>
-                ) : [...items].sort((a, b) => {
+                ) : (() => {
+                    const ABCBadge = ({ sku }) => {
+                      const grade = abcMap[(sku || '').toUpperCase()]
+                      if (!grade) return <span style={{ color: T.border, fontSize: 11 }}>—</span>
+                      const colors = { A: '#22c55e', B: '#f59e0b', C: T.muted }
+                      return (
+                        <span style={{ background: colors[grade] + '20', color: colors[grade], border: `1px solid ${colors[grade]}40`, borderRadius: 3, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{grade}</span>
+                      )
+                    }
+                    const visibleItems = abcFilter !== 'All'
+                      ? items.filter(p => abcMap[(p.sku || '').toUpperCase()] === abcFilter)
+                      : items
+                    return [...visibleItems].sort((a, b) => {
                     if (!coverSort) return 0
                     const cover = (p) => {
                       const sq = sheetQty[(p.sku || '').toUpperCase()] || {}
@@ -408,6 +453,7 @@ export default function InventoryPage() {
                       <Td style={qtyStyle(qRow)}>{qRow.toLocaleString()}</Td>
                       <Td style={qtyStyle(qUs)}>{qUs.toLocaleString()}</Td>
                       <Td style={{ textAlign: 'right', fontWeight: 700, color: tot === 0 ? T.red : tot < 20 ? T.yellow : T.text }}>{tot.toLocaleString()}</Td>
+                      <Td style={{ textAlign: 'center' }}><ABCBadge sku={p.sku} /></Td>
                       <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{p.cost_price ? fmt(p.cost_price, 'GBP') : '—'}</Td>
                       <Td style={{ textAlign: 'right', color: T.accent, fontSize: 12 }}>{p.retail_price ? fmt(p.retail_price, 'GBP') : '—'}</Td>
                       {(() => {
@@ -428,11 +474,12 @@ export default function InventoryPage() {
                       <CoverCell weeks={coverUs} />
                     </tr>
                   )
-                })}
+                  })
+                })()}
               </tbody>
             </table>
           </div>
-          {total > 0 && !coverSort && (
+          {total > 0 && !coverSort && abcFilter === 'All' && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: `1px solid ${T.border}` }}>
               <span style={{ fontSize: 12, color: T.muted }}>
                 Showing {(page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, total).toLocaleString()} of <strong style={{ color: T.text }}>{total.toLocaleString()}</strong> variants

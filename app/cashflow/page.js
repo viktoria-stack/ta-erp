@@ -4,6 +4,43 @@ import Shell from '@/components/Shell'
 import { T, Th, Td, Loading } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 
+function CashflowChart({ months, monthTotals }) {
+  const [hov, setHov] = useState(null)
+  if (months.length === 0) return null
+  const maxVal = Math.max(...months.map(k => monthTotals[k].total), 1)
+  const BAR_W = 52, GAP = 8, H = 100
+  const totalW = months.length * (BAR_W + GAP) + 4
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <svg width={Math.max(totalW, 300)} height={H + 36} style={{ display: 'block' }}>
+        {months.map((k, i) => {
+          const t = monthTotals[k].total
+          const barH = Math.max(4, (t / maxVal) * H)
+          const x = i * (BAR_W + GAP)
+          const y = H - barH
+          const isHov = hov === k
+          const [yr, mo] = k.split('-')
+          const label = new Date(parseInt(yr), parseInt(mo) - 1).toLocaleDateString('en-GB', { month: 'short' })
+          return (
+            <g key={k} onMouseEnter={() => setHov(k)} onMouseLeave={() => setHov(null)} style={{ cursor: 'default' }}>
+              <rect x={x} y={y} width={BAR_W} height={barH} rx={4}
+                fill={isHov ? T.accent : '#3b82f650'} style={{ transition: 'fill 0.15s' }} />
+              {isHov && (
+                <text x={x + BAR_W / 2} y={Math.max(y - 7, 11)} textAnchor="middle"
+                  fontSize={10} fill={T.accent} fontWeight="bold">
+                  {fmtCcy(t, 'USD')}
+                </text>
+              )}
+              <text x={x + BAR_W / 2} y={H + 15} textAnchor="middle" fontSize={10} fill={T.muted}>{label}</text>
+              <text x={x + BAR_W / 2} y={H + 28} textAnchor="middle" fontSize={9} fill={T.border}>{yr}</text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 const fmtCcy = (n, cur = 'USD') =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n || 0)
 
@@ -119,6 +156,14 @@ export default function CashflowPage() {
               </div>
             ))}
           </div>
+
+          {/* Payment timeline chart */}
+          {months.length > 0 && (
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '16px 20px', marginBottom: 24 }}>
+              <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 12 }}>Payment Timeline</div>
+              <CashflowChart months={months} monthTotals={monthTotals} />
+            </div>
+          )}
 
           {/* Monthly sections */}
           {months.length === 0 ? (
