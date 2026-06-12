@@ -2,7 +2,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import Shell from '@/components/Shell'
 import { T, Th, Td, Loading } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 
 const fmtCcy = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(n || 0)
 const fmtNum = n => Number(n || 0).toLocaleString('en-GB')
@@ -36,7 +35,6 @@ const Delta = ({ cur, prev }) => {
 
 export default function SalesPage() {
   const [rows, setRows]           = useState([])
-  const [inventory, setInventory] = useState({})
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
   const [days, setDays]           = useState(7)
@@ -47,18 +45,6 @@ export default function SalesPage() {
   const [search, setSearch]       = useState('')
   const [sortCol, setSortCol]     = useState('revenue')
   const [sortAsc, setSortAsc]     = useState(false)
-
-  // Fetch inventory from Supabase
-  useEffect(() => {
-    supabase.from('inventory_restock').select('sku,qty_uk,qty_us,product_name')
-      .then(({ data }) => {
-        if (data) {
-          const map = {}
-          data.forEach(i => { map[i.sku.toUpperCase()] = i })
-          setInventory(map)
-        }
-      })
-  }, [])
 
   useEffect(() => {
     setLoading(true)
@@ -211,14 +197,12 @@ export default function SalesPage() {
       {loading ? <Loading /> : (
         <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
               <thead>
                 <tr style={{ background: T.surface }}>
                   <Th style={{ width: 36, textAlign: 'center' }}>#</Th>
                   <SortTh col="item_name">Product</SortTh>
                   <SortTh col="item_id">SKU</SortTh>
-                  {(store === 'row' || store === 'both') && <Th style={{ textAlign: 'right' }}>Stock ROW</Th>}
-                  {(store === 'us'  || store === 'both') && <Th style={{ textAlign: 'right' }}>Stock US</Th>}
                   <SortTh col="revenue" right>Revenue</SortTh>
                   <SortTh col="purchased" right>Sold</SortTh>
                   <SortTh col="viewed" right>Views</SortTh>
@@ -227,44 +211,32 @@ export default function SalesPage() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: T.muted, fontSize: 13 }}>
+                  <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: T.muted, fontSize: 13 }}>
                     {error ? 'Error loading data' : 'No sales data found for this period'}
                   </td></tr>
-                ) : filtered.map((r, i) => {
-                  const inv = inventory[(r.item_id || '').toUpperCase()] || null
-                  const stockRow = inv?.qty_uk ?? null
-                  const stockUs  = inv?.qty_us  ?? null
-                  const StockCell = ({ qty }) => {
-                    if (qty === null) return <Td style={{ textAlign: 'right', color: T.border }}>—</Td>
-                    const color = qty <= 0 ? T.red : qty < 10 ? T.yellow : T.text
-                    return <Td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color }}>{fmtNum(qty)}</Td>
-                  }
-                  return (
-                    <tr key={r.item_id + i} className="row-hover" style={{ borderTop: `1px solid ${T.border}` }}>
-                      <Td style={{ textAlign: 'center', color: T.muted, fontSize: 12, fontWeight: 700 }}>
-                        {i + 1 <= 3 ? ['🥇','🥈','🥉'][i] : i + 1}
-                      </Td>
-                      <Td style={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.item_name || inv?.title || '—'}
-                      </Td>
-                      <Td style={{ fontFamily: 'monospace', fontSize: 12, color: T.muted }}>{r.item_id || '—'}</Td>
-                      {(store === 'row' || store === 'both') && <StockCell qty={stockRow} />}
-                      {(store === 'us'  || store === 'both') && <StockCell qty={stockUs} />}
-                      <Td style={{ textAlign: 'right', fontWeight: 700, color: T.green, fontVariantNumeric: 'tabular-nums' }}>
-                        {fmtCcy(r.revenue)}
-                        <Delta cur={r.revenue} prev={r.revenue_prev} />
-                      </Td>
-                      <Td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                        {r.purchased > 0 ? fmtNum(r.purchased) : <span style={{ color: T.muted }}>—</span>}
-                        {r.purchased > 0 && <Delta cur={r.purchased} prev={r.purchased_prev} />}
-                      </Td>
-                      <Td style={{ textAlign: 'right', color: T.muted, fontVariantNumeric: 'tabular-nums' }}>
-                        {r.viewed > 0 ? fmtNum(r.viewed) : <span style={{ color: T.border }}>—</span>}
-                      </Td>
-                      <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{convRate(r)}</Td>
-                    </tr>
-                  )
-                })}
+                ) : filtered.map((r, i) => (
+                  <tr key={r.item_id + i} className="row-hover" style={{ borderTop: `1px solid ${T.border}` }}>
+                    <Td style={{ textAlign: 'center', color: T.muted, fontSize: 12, fontWeight: 700 }}>
+                      {i + 1 <= 3 ? ['🥇','🥈','🥉'][i] : i + 1}
+                    </Td>
+                    <Td style={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {r.item_name || '—'}
+                    </Td>
+                    <Td style={{ fontFamily: 'monospace', fontSize: 12, color: T.muted }}>{r.item_id || '—'}</Td>
+                    <Td style={{ textAlign: 'right', fontWeight: 700, color: T.green, fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtCcy(r.revenue)}
+                      <Delta cur={r.revenue} prev={r.revenue_prev} />
+                    </Td>
+                    <Td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {r.purchased > 0 ? fmtNum(r.purchased) : <span style={{ color: T.muted }}>—</span>}
+                      {r.purchased > 0 && <Delta cur={r.purchased} prev={r.purchased_prev} />}
+                    </Td>
+                    <Td style={{ textAlign: 'right', color: T.muted, fontVariantNumeric: 'tabular-nums' }}>
+                      {r.viewed > 0 ? fmtNum(r.viewed) : <span style={{ color: T.border }}>—</span>}
+                    </Td>
+                    <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{convRate(r)}</Td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

@@ -122,6 +122,21 @@ export default function InventoryPage() {
   const [snapSearch, setSnapSearch] = useState('')
   const snapTimer = useRef(null)
 
+  // Sheet qty map keyed by SKU uppercase (Maxtrify live stock)
+  const [sheetQty, setSheetQty] = useState({})
+  useEffect(() => {
+    fetch('/api/inventory-data')
+      .then(r => r.json())
+      .then(d => {
+        if (d.items) {
+          const map = {}
+          d.items.forEach(i => { map[i.sku.toUpperCase()] = { qty_uk: i.qty_row ?? 0, qty_us: i.qty_us ?? 0 } })
+          setSheetQty(map)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   // ── Live data
   const load = useCallback(async (s, st, p) => {
     setLoading(true); setError('')
@@ -312,15 +327,18 @@ export default function InventoryPage() {
                     {search ? 'No results for your search' : 'No inventory data'}
                   </td></tr>
                 ) : items.map((p, i) => {
-                  const tot = (p.qty_uk || 0) + (p.qty_us || 0)
+                  const sq = sheetQty[(p.sku || '').toUpperCase()] || {}
+                  const qRow = sq.qty_uk ?? p.qty_uk ?? 0
+                  const qUs  = sq.qty_us ?? p.qty_us ?? 0
+                  const tot  = qRow + qUs
                   return (
                     <tr key={p.id || i} className="row-hover">
                       <Td style={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.product_name}</Td>
                       <Td>{p.size ? <span style={{ background: T.subtle, color: T.text, borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{p.size}</span> : <span style={{ color: T.muted, fontSize: 12 }}>—</span>}</Td>
                       <Td style={{ fontFamily: 'monospace', fontSize: 11, color: T.muted }}>{p.sku || '—'}</Td>
                       <Td style={{ fontFamily: 'monospace', fontSize: 11, color: T.muted }}>{p.barcode || '—'}</Td>
-                      <Td style={qtyStyle(p.qty_uk || 0)}>{(p.qty_uk || 0).toLocaleString()}</Td>
-                      <Td style={qtyStyle(p.qty_us || 0)}>{(p.qty_us || 0).toLocaleString()}</Td>
+                      <Td style={qtyStyle(qRow)}>{qRow.toLocaleString()}</Td>
+                      <Td style={qtyStyle(qUs)}>{qUs.toLocaleString()}</Td>
                       <Td style={{ textAlign: 'right', fontWeight: 700, color: tot === 0 ? T.red : tot < 20 ? T.yellow : T.text }}>{tot.toLocaleString()}</Td>
                       <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{p.cost_price ? fmt(p.cost_price, 'GBP') : '—'}</Td>
                       <Td style={{ textAlign: 'right', color: T.accent, fontSize: 12 }}>{p.retail_price ? fmt(p.retail_price, 'GBP') : '—'}</Td>
