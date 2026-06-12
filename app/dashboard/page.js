@@ -84,7 +84,21 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [countdown, setCountdown] = useState(30)
+  const [sheetTotals, setSheetTotals] = useState(null)
   const router = useRouter()
+
+  useEffect(() => {
+    fetch('/api/inventory-data')
+      .then(r => r.json())
+      .then(d => {
+        if (d.items) {
+          const totalRow = d.items.reduce((s, i) => s + (i.qty_row || 0), 0)
+          const totalUs  = d.items.reduce((s, i) => s + (i.qty_us  || 0), 0)
+          setSheetTotals({ totalRow, totalUs })
+        }
+      })
+      .catch(() => {})
+  }, [])
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const refresh = useCallback((showLoading = false) => {
@@ -166,9 +180,9 @@ export default function DashboardPage() {
     .filter(s => s.status?.includes('Booked in') || s.status?.includes('booked in'))
     .slice(0, 5)
 
-  // ── Inventory stats
-  const totalUK = invStats.reduce((s, r) => s + (r.qty_uk || 0), 0)
-  const totalUS = invStats.reduce((s, r) => s + (r.qty_us || 0), 0)
+  // ── Inventory stats — qty from Maxtrify sheet, counts from Supabase
+  const totalUK = sheetTotals?.totalRow ?? invStats.reduce((s, r) => s + (r.qty_uk || 0), 0)
+  const totalUS = sheetTotals?.totalUs  ?? invStats.reduce((s, r) => s + (r.qty_us  || 0), 0)
   const outOfStock = invStats.filter(r => !r.qty_uk && !r.qty_us).length
   const lowStock = invStats.filter(r => (r.qty_uk > 0 && r.qty_uk < 10) || (r.qty_us > 0 && r.qty_us < 10)).length
 

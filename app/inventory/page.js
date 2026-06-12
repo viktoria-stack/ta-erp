@@ -159,6 +159,8 @@ export default function InventoryPage() {
     }).catch(() => {})
   }, [])
 
+  const [coverSort, setCoverSort] = useState(false)
+
   // ── Live data
   const load = useCallback(async (s, st, p) => {
     setLoading(true); setError('')
@@ -280,17 +282,24 @@ export default function InventoryPage() {
     <Shell title="Inventory">
       {/* KPIs — qty totals from sheet, counts from Supabase */}
       {(() => {
-        const sheetVals = Object.values(sheetQty)
-        const hasSheet  = sheetVals.length > 0
-        const totalRow  = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_uk || 0), 0) : kpis?.total_uk
-        const totalUs   = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_us || 0), 0) : kpis?.total_us
+        const sheetVals  = Object.values(sheetQty)
+        const hasSheet   = sheetVals.length > 0
+        const totalRow   = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_uk || 0), 0) : kpis?.total_uk
+        const totalUs    = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_us || 0), 0) : kpis?.total_us
+        const criticalCount = hasSheet ? Object.entries(sheetQty).filter(([sku, v]) => {
+          const ws = weeklySales[sku] || {}
+          const coverRow = ws.row > 0 ? v.qty_uk / ws.row : null
+          const coverUs  = ws.us  > 0 ? v.qty_us / ws.us  : null
+          return (coverRow !== null && coverRow < 4) || (coverUs !== null && coverUs < 4)
+        }).length : null
         return (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 20 }}>
             <KPI label="Total SKUs" value={kpis ? kpis.total_skus?.toLocaleString() : '…'} />
             <KPI label="🇬🇧 ROW Units" value={totalRow != null ? totalRow.toLocaleString() : '…'} color="#3b82f6" />
             <KPI label="🇺🇸 US Units" value={totalUs  != null ? totalUs.toLocaleString()  : '…'} color="#8b5cf6" />
             <KPI label="Low Stock" value={kpis ? kpis.low_stock?.toLocaleString() : '…'} color={T.yellow} />
             <KPI label="Out of Stock" value={kpis ? kpis.out_of_stock?.toLocaleString() : '…'} color={T.red} />
+            <KPI label="⚠ Critical (<4w)" value={criticalCount != null ? criticalCount.toLocaleString() : '…'} color={criticalCount > 0 ? T.red : T.green} />
           </div>
         )
       })()}
@@ -324,6 +333,9 @@ export default function InventoryPage() {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input placeholder="Search product, SKU, barcode…" value={searchInput} onChange={e => handleSearch(e.target.value)}
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: '7px 12px', color: T.text, fontSize: 13, width: 260, outline: 'none' }} />
+            <button onClick={() => setCoverSort(v => !v)} style={{ background: coverSort ? T.red : T.subtle, color: coverSort ? '#fff' : T.muted, border: 'none', borderRadius: 4, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              {coverSort ? '⚠ Critical first ✓' : 'Sort by cover'}
+            </button>
             <BtnGhost onClick={exportExcel} disabled={exporting}>{exporting ? 'Exporting…' : '⬇ Export Excel'}</BtnGhost>
           </div>
         </div>
@@ -358,7 +370,17 @@ export default function InventoryPage() {
                   <tr><td colSpan={15} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                     {search ? 'No results for your search' : 'No inventory data'}
                   </td></tr>
-                ) : items.map((p, i) => {
+                ) : [...items].sort((a, b) => {
+                    if (!coverSort) return 0
+                    const cover = (p) => {
+                      const sq = sheetQty[(p.sku || '').toUpperCase()] || {}
+                      const ws = weeklySales[(p.sku || '').toUpperCase()] || {}
+                      const cr = ws.row > 0 ? (sq.qty_uk ?? 0) / ws.row : Infinity
+                      const cu = ws.us  > 0 ? (sq.qty_us ?? 0) / ws.us  : Infinity
+                      return Math.min(cr, cu)
+                    }
+                    return cover(a) - cover(b)
+                  }).map((p, i) => {
                   const sq   = sheetQty[(p.sku || '').toUpperCase()] || {}
                   const ws   = weeklySales[(p.sku || '').toUpperCase()] || {}
                   const qRow = sq.qty_uk ?? p.qty_uk ?? 0
