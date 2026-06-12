@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Shell from '@/components/Shell'
 import { T, Th, Td, Loading } from '@/components/ui'
+import { supabase } from '@/lib/supabase'
 
 const fmtCcy = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(n || 0)
 const fmtNum = n => Number(n || 0).toLocaleString('en-GB')
@@ -47,18 +48,16 @@ export default function SalesPage() {
   const [sortCol, setSortCol]     = useState('revenue')
   const [sortAsc, setSortAsc]     = useState(false)
 
-  // Fetch inventory once on mount
+  // Fetch inventory from Supabase
   useEffect(() => {
-    fetch('/api/inventory-data')
-      .then(r => r.json())
-      .then(data => {
-        if (data.items) {
+    supabase.from('inventory_restock').select('sku,qty_uk,qty_us,product_name')
+      .then(({ data }) => {
+        if (data) {
           const map = {}
-          data.items.forEach(i => { map[i.sku.toUpperCase()] = i })
+          data.forEach(i => { map[i.sku.toUpperCase()] = i })
           setInventory(map)
         }
       })
-      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -233,7 +232,7 @@ export default function SalesPage() {
                   </td></tr>
                 ) : filtered.map((r, i) => {
                   const inv = inventory[(r.item_id || '').toUpperCase()] || null
-                  const stockRow = inv?.qty_row ?? null
+                  const stockRow = inv?.qty_uk ?? null
                   const stockUs  = inv?.qty_us  ?? null
                   const StockCell = ({ qty }) => {
                     if (qty === null) return <Td style={{ textAlign: 'right', color: T.border }}>—</Td>
