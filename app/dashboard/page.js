@@ -151,6 +151,7 @@ export default function DashboardPage() {
   const [sheetTotals, setSheetTotals] = useState(null)
   const [topSales, setTopSales] = useState({ row: [], us: [] })
   const [trend, setTrend] = useState(null)
+  const [salesError, setSalesError] = useState('')
   const router = useRouter()
 
   useEffect(() => {
@@ -171,18 +172,19 @@ export default function DashboardPage() {
       fetch('/api/sales-data?days=7&store=row').then(r => r.json()),
       fetch('/api/sales-data?days=7&store=us').then(r => r.json()),
     ]).then(([rowData, usData]) => {
+      if (rowData.error) { setSalesError(rowData.error); return }
       setTopSales({
         row: (rowData.rows || []).slice(0, 5),
         us:  (usData.rows  || []).slice(0, 5),
       })
-    }).catch(() => {})
+    }).catch(e => setSalesError(e.message))
   }, [])
 
   useEffect(() => {
     fetch('/api/sales-trend?days=30&store=both')
       .then(r => r.json())
-      .then(d => { if (d.dates) setTrend(d) })
-      .catch(() => {})
+      .then(d => { if (d.error) setSalesError(d.error); else if (d.dates) setTrend(d) })
+      .catch(e => setSalesError(e.message))
   }, [])
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -304,6 +306,13 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Sales API error ── */}
+      {salesError && (
+        <div style={{ background: '#ef444410', border: '1px solid #ef444430', borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: 12, color: '#ef4444' }}>
+          ⚠ GA4 API error: {salesError}
+        </div>
+      )}
 
       {/* ── Revenue trend sparkline ── */}
       {trend && (
