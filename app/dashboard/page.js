@@ -85,6 +85,7 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState(null)
   const [countdown, setCountdown] = useState(30)
   const [sheetTotals, setSheetTotals] = useState(null)
+  const [topSales, setTopSales] = useState({ row: [], us: [] })
   const router = useRouter()
 
   useEffect(() => {
@@ -98,6 +99,18 @@ export default function DashboardPage() {
         }
       })
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/sales-data?days=7&store=row').then(r => r.json()),
+      fetch('/api/sales-data?days=7&store=us').then(r => r.json()),
+    ]).then(([rowData, usData]) => {
+      setTopSales({
+        row: (rowData.rows || []).slice(0, 5),
+        us:  (usData.rows  || []).slice(0, 5),
+      })
+    }).catch(() => {})
   }, [])
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -410,15 +423,53 @@ export default function DashboardPage() {
         </Section>
       </div>
 
-      {/* Sales placeholder */}
-      <div style={{ marginTop: 16, background: T.card, border: `1px dashed ${T.border}`, borderRadius: 10, padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: 14, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>📈 Sales Dashboard</div>
-          <div style={{ fontSize: 12, color: T.muted }}>Connect Shopify API to see live revenue, orders and top products here</div>
-        </div>
-        <button onClick={() => router.push('/sales')} style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 5, padding: '8px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-          Set up Sales →
-        </button>
+      {/* Top Products — last 7 days */}
+      <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {[
+          { label: '🇬🇧 Top ROW Products', rows: topSales.row, color: '#3b82f6' },
+          { label: '🇺🇸 Top US Products',  rows: topSales.us,  color: '#8b5cf6' },
+        ].map(({ label, rows, color }) => (
+          <div key={label} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: 14, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                {label} <span style={{ color: T.border, fontWeight: 400 }}>· last 7 days</span>
+              </span>
+              <button onClick={() => router.push('/sales')} style={{ background: 'none', border: 'none', color: T.accent, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>View all →</button>
+            </div>
+            {rows.length === 0 ? (
+              <div style={{ padding: '20px 18px', color: T.muted, fontSize: 13 }}>Loading…</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: T.surface }}>
+                    <Th style={{ width: 28, textAlign: 'center' }}>#</Th>
+                    <Th>Product</Th>
+                    <Th style={{ textAlign: 'right' }}>Sold</Th>
+                    <Th style={{ textAlign: 'right' }}>Revenue</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={r.item_id + i} className="row-hover">
+                      <Td style={{ textAlign: 'center', color: T.muted, fontSize: 11, fontWeight: 700 }}>
+                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                      </Td>
+                      <Td style={{ fontWeight: 600, fontSize: 13, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.item_name || r.item_id || '—'}
+                      </Td>
+                      <Td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: color, fontWeight: 700 }}>
+                        {(r.purchased || 0).toLocaleString('en-GB')}
+                      </Td>
+                      <Td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: T.green }}>
+                        {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(r.revenue || 0)}
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        ))}
       </div>
     <style>{`@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }`}</style>
     </Shell>

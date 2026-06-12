@@ -162,17 +162,22 @@ export default function InventoryPage() {
   const [coverSort, setCoverSort] = useState(false)
 
   // ── Live data
-  const load = useCallback(async (s, st, p) => {
+  const load = useCallback(async (s, st, p, allForCover = false) => {
     setLoading(true); setError('')
     try {
-      const { data, total } = await fetchInventory({ search: s, store: st, page: p })
-      setItems(data); setTotal(total)
+      if (allForCover) {
+        const data = await fetchAllInventory({ search: s, store: st })
+        setItems(data); setTotal(data.length)
+      } else {
+        const { data, total } = await fetchInventory({ search: s, store: st, page: p })
+        setItems(data); setTotal(total)
+      }
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
 
   useEffect(() => { fetchKPIs().then(setKpis).catch(() => {}) }, [])
-  useEffect(() => { load(search, store, page) }, [search, store, page])
+  useEffect(() => { load(search, store, page, coverSort) }, [search, store, page, coverSort])
 
   const handleSearch = (val) => {
     setSearchInput(val)
@@ -333,7 +338,7 @@ export default function InventoryPage() {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input placeholder="Search product, SKU, barcode…" value={searchInput} onChange={e => handleSearch(e.target.value)}
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: '7px 12px', color: T.text, fontSize: 13, width: 260, outline: 'none' }} />
-            <button onClick={() => setCoverSort(v => !v)} style={{ background: coverSort ? T.red : T.subtle, color: coverSort ? '#fff' : T.muted, border: 'none', borderRadius: 4, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <button onClick={() => { setCoverSort(v => !v); setPage(0) }} style={{ background: coverSort ? T.red : T.subtle, color: coverSort ? '#fff' : T.muted, border: 'none', borderRadius: 4, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               {coverSort ? '⚠ Critical first ✓' : 'Sort by cover'}
             </button>
             <BtnGhost onClick={exportExcel} disabled={exporting}>{exporting ? 'Exporting…' : '⬇ Export Excel'}</BtnGhost>
@@ -420,7 +425,7 @@ export default function InventoryPage() {
               </tbody>
             </table>
           </div>
-          {total > 0 && (
+          {total > 0 && !coverSort && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: `1px solid ${T.border}` }}>
               <span style={{ fontSize: 12, color: T.muted }}>
                 Showing {(page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, total).toLocaleString()} of <strong style={{ color: T.text }}>{total.toLocaleString()}</strong> variants
