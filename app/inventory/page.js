@@ -278,14 +278,22 @@ export default function InventoryPage() {
 
   return (
     <Shell title="Inventory">
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
-        <KPI label="Total SKUs" value={kpis ? kpis.total_skus?.toLocaleString() : '…'} />
-        <KPI label="🇬🇧 ROW Units" value={kpis ? kpis.total_uk?.toLocaleString() : '…'} color="#3b82f6" />
-        <KPI label="🇺🇸 US Units" value={kpis ? kpis.total_us?.toLocaleString() : '…'} color="#8b5cf6" />
-        <KPI label="Low Stock" value={kpis ? kpis.low_stock?.toLocaleString() : '…'} color={T.yellow} />
-        <KPI label="Out of Stock" value={kpis ? kpis.out_of_stock?.toLocaleString() : '…'} color={T.red} />
-      </div>
+      {/* KPIs — qty totals from sheet, counts from Supabase */}
+      {(() => {
+        const sheetVals = Object.values(sheetQty)
+        const hasSheet  = sheetVals.length > 0
+        const totalRow  = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_uk || 0), 0) : kpis?.total_uk
+        const totalUs   = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_us || 0), 0) : kpis?.total_us
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+            <KPI label="Total SKUs" value={kpis ? kpis.total_skus?.toLocaleString() : '…'} />
+            <KPI label="🇬🇧 ROW Units" value={totalRow != null ? totalRow.toLocaleString() : '…'} color="#3b82f6" />
+            <KPI label="🇺🇸 US Units" value={totalUs  != null ? totalUs.toLocaleString()  : '…'} color="#8b5cf6" />
+            <KPI label="Low Stock" value={kpis ? kpis.low_stock?.toLocaleString() : '…'} color={T.yellow} />
+            <KPI label="Out of Stock" value={kpis ? kpis.out_of_stock?.toLocaleString() : '…'} color={T.red} />
+          </div>
+        )
+      })()}
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
