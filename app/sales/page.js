@@ -61,6 +61,9 @@ export default function SalesPage() {
   const [sortAsc, setSortAsc]     = useState(false)
   const [geo, setGeo]             = useState({ countries: [], channels: [] })
   const [geoLoading, setGeoLoading] = useState(false)
+  const [page, setPage]           = useState(0)
+
+  const PAGE_SIZE = 50
 
   useEffect(() => {
     setLoading(true)
@@ -106,6 +109,11 @@ export default function SalesPage() {
       return sortAsc ? cmp : -cmp
     })
   }, [rows, search, sortCol, sortAsc])
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const pageItems  = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  useEffect(() => { setPage(0) }, [search, sortCol, sortAsc, store, days, startDate, endDate])
 
   const totalRevenue   = rows.reduce((s, r) => s + r.revenue, 0)
   const totalRevPrev   = rows.reduce((s, r) => s + r.revenue_prev, 0)
@@ -219,6 +227,9 @@ export default function SalesPage() {
         {!loading && (
           <span style={{ marginLeft: 'auto', fontSize: 12, color: T.muted }}>{filtered.length} product{filtered.length !== 1 ? 's' : ''}</span>
         )}
+        {!loading && totalPages > 1 && (
+          <span style={{ fontSize: 12, color: T.muted }}>Page {page + 1} of {totalPages}</span>
+        )}
       </div>
 
       {/* Table */}
@@ -238,14 +249,16 @@ export default function SalesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {pageItems.length === 0 ? (
                   <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: T.muted, fontSize: 13 }}>
                     {error ? 'Error loading data' : 'No sales data found for this period'}
                   </td></tr>
-                ) : filtered.map((r, i) => (
-                  <tr key={r.item_id + i} className="row-hover" style={{ borderTop: `1px solid ${T.border}` }}>
+                ) : pageItems.map((r, i) => {
+                  const rank = page * PAGE_SIZE + i
+                  return (
+                  <tr key={r.item_id + rank} className="row-hover" style={{ borderTop: `1px solid ${T.border}` }}>
                     <Td style={{ textAlign: 'center', color: T.muted, fontSize: 12, fontWeight: 700 }}>
-                      {i + 1 <= 3 ? ['🥇','🥈','🥉'][i] : i + 1}
+                      {rank < 3 ? ['🥇','🥈','🥉'][rank] : rank + 1}
                     </Td>
                     <Td style={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {r.item_name || '—'}
@@ -264,10 +277,35 @@ export default function SalesPage() {
                     </Td>
                     <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{convRate(r)}</Td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 14 }}>
+          <button onClick={() => setPage(0)} disabled={page === 0}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, color: page === 0 ? T.border : T.muted, borderRadius: 5, padding: '5px 10px', fontSize: 12, cursor: page === 0 ? 'default' : 'pointer' }}>«</button>
+          <button onClick={() => setPage(p => p - 1)} disabled={page === 0}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, color: page === 0 ? T.border : T.muted, borderRadius: 5, padding: '5px 10px', fontSize: 12, cursor: page === 0 ? 'default' : 'pointer' }}>‹</button>
+          {Array.from({ length: totalPages }, (_, i) => i)
+            .filter(i => Math.abs(i - page) <= 2)
+            .map(i => (
+              <button key={i} onClick={() => setPage(i)} style={{
+                background: i === page ? T.accent : T.surface,
+                border: `1px solid ${i === page ? T.accent : T.border}`,
+                color: i === page ? '#fff' : T.muted,
+                borderRadius: 5, padding: '5px 10px', fontSize: 12, cursor: 'pointer', fontWeight: i === page ? 700 : 400,
+              }}>{i + 1}</button>
+            ))}
+          <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, color: page >= totalPages - 1 ? T.border : T.muted, borderRadius: 5, padding: '5px 10px', fontSize: 12, cursor: page >= totalPages - 1 ? 'default' : 'pointer' }}>›</button>
+          <button onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1}
+            style={{ background: T.surface, border: `1px solid ${T.border}`, color: page >= totalPages - 1 ? T.border : T.muted, borderRadius: 5, padding: '5px 10px', fontSize: 12, cursor: page >= totalPages - 1 ? 'default' : 'pointer' }}>»</button>
         </div>
       )}
 
