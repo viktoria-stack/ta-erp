@@ -415,7 +415,7 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
         .catch(() => setLinesLoading(false))
     }
   }, [tab])
-  const isUnsplit = shipments.length === 0 && !po.po_splits_confirmed
+  const isUnsplit = shipments.length === 0
   const totalUnits = lines.reduce((s,l)=>s+(l.qty_uk||0)+(l.qty_usa||0),0)
   const grandTotal = lines.reduce((s,l)=>s+lineTotal(l),0)
   const [showSplit, setShowSplit] = useState(false)
@@ -469,7 +469,9 @@ function PODetail({ po, onClose, onSaved, onSplit }) {
       {isUnsplit && (
         <div style={{ background:'#f59e0b12', border:'1px solid #f59e0b40', borderRadius:8, padding:'14px 18px', marginBottom:16, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div>
-            <div style={{ fontWeight:700, color:T.yellow, marginBottom:2 }}>⚠ This PO has not been split into shipments yet</div>
+            <div style={{ fontWeight:700, color:T.yellow, marginBottom:2 }}>
+              {po.po_splits_confirmed ? '✂ No shipments created in ERP yet' : '⚠ This PO has not been split into shipments yet'}
+            </div>
             <div style={{ fontSize:12, color:T.muted }}>Split it to create UK and/or USA shipments and start tracking delivery.</div>
           </div>
           <BtnPrimary onClick={()=>{ onClose(); onSplit(po) }} style={{ background:T.yellow, flexShrink:0 }}>
