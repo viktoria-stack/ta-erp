@@ -188,7 +188,7 @@ export default function InventoryPage() {
   const mergedItems = useMemo(() => {
     const supabaseSkus = new Set(supabaseItems.map(p => (p.sku || '').toUpperCase()))
     const sheetOnly = Object.entries(sheetQty)
-      .filter(([sku, v]) => !supabaseSkus.has(sku) && (v.qty_uk > 0 || v.qty_us > 0))
+      .filter(([sku, v]) => !supabaseSkus.has(sku))
       .map(([sku, v]) => {
         const parts = sku.split('-')
         const last  = parts[parts.length - 1]
