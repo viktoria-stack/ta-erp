@@ -257,6 +257,53 @@ export default function InventoryPage() {
   const totalPages = Math.ceil(filteredItems.length / PAGE_SIZE)
   const pageItems  = filteredItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
+  const coverageDist = useMemo(() => {
+    const b = { critical: 0, low: 0, ok: 0, good: 0, noSales: 0 }
+    for (const item of mergedItems) {
+      const sq = sheetQty[(item.sku || '').toUpperCase()] || {}
+      const ws = weeklySales[(item.sku || '').toUpperCase()] || {}
+      const qUk = sq.qty_uk ?? item.qty_uk ?? 0
+      const qUs = sq.qty_us ?? item.qty_us ?? 0
+      if (!ws.row && !ws.us) { b.noSales++; continue }
+      const cr = ws.row > 0 ? qUk / ws.row : Infinity
+      const cu = ws.us  > 0 ? qUs / ws.us  : Infinity
+      const cover = Math.min(cr, cu)
+      if (cover < 4) b.critical++
+      else if (cover < 8) b.low++
+      else if (cover < 12) b.ok++
+      else b.good++
+    }
+    return b
+  }, [mergedItems, sheetQty, weeklySales])
+
+  const baseSku = (sku) => {
+    const parts = sku.split('-')
+    const last = parts[parts.length - 1]
+    return SIZES.has(last) ? parts.slice(0, -1).join('-') : sku
+  }
+
+  const styleGroups = useMemo(() => {
+    const groups = {}
+    for (const item of filteredItems) {
+      const sku = (item.sku || '').toUpperCase()
+      const base = baseSku(sku)
+      const sq = sheetQty[sku] || {}
+      const qUk = sq.qty_uk ?? item.qty_uk ?? 0
+      const qUs = sq.qty_us ?? item.qty_us ?? 0
+      if (!groups[base]) groups[base] = {
+        base_sku: base,
+        product_name: item.product_name || sku,
+        total_uk: 0, total_us: 0,
+        sizes: [],
+      }
+      groups[base].total_uk += qUk
+      groups[base].total_us += qUs
+      const sz = item.size
+      if (sz) groups[base].sizes.push({ size: sz, qty_uk: qUk, qty_us: qUs })
+    }
+    return Object.values(groups).sort((a,b) => a.product_name.localeCompare(b.product_name))
+  }, [filteredItems, sheetQty])
+
   const handleSearch = (val) => {
     setSearchInput(val)
     clearTimeout(searchTimer.current)
@@ -410,10 +457,50 @@ export default function InventoryPage() {
         <Tab id="live"      label="📦 Live" />
         <Tab id="movements" label="🔄 Movements" />
         <Tab id="snapshot"  label="📸 Snapshot" />
+        <Tab id="style"     label="👗 By Style" />
       </div>
 
       {/* ── LIVE VIEW ── */}
       {view === 'live' && <>
+        {Object.values(weeklySales).length > 0 && (
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 20px', marginBottom: 16, display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, whiteSpace: 'nowrap' }}>Stock Coverage Distribution</div>
+            <div style={{ display: 'flex', gap: 12, flex: 1, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Critical <4w', value: coverageDist.critical, color: T.red },
+                { label: '4–8 weeks',    value: coverageDist.low,      color: T.yellow },
+                { label: '8–12 weeks',   value: coverageDist.ok,       color: '#3b82f6' },
+                { label: '12+ weeks',    value: coverageDist.good,     color: T.green },
+                { label: 'No sales data',value: coverageDist.noSales,  color: T.border },
+              ].map(b => {
+                const total = Object.values(coverageDist).reduce((s,v)=>s+v,0) || 1
+                const pct = ((b.value / total) * 100).toFixed(0)
+                return (
+                  <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, background: b.color, flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontSize: 11, color: T.muted }}>{b.label}</div>
+                      <div style={{ fontSize: 15, fontFamily: 'Barlow Condensed', fontWeight: 800, color: b.color }}>{b.value.toLocaleString()} <span style={{ fontSize: 10, fontWeight: 400, color: T.muted }}>({pct}%)</span></div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ height: 8, borderRadius: 4, overflow: 'hidden', display: 'flex', gap: 1 }}>
+                {[
+                  { value: coverageDist.critical, color: T.red },
+                  { value: coverageDist.low,      color: T.yellow },
+                  { value: coverageDist.ok,       color: '#3b82f6' },
+                  { value: coverageDist.good,     color: T.green },
+                ].map((b,i) => {
+                  const total = Object.values(coverageDist).reduce((s,v)=>s+v,0) || 1
+                  return <div key={i} style={{ flex: b.value / total, background: b.color, minWidth: b.value > 0 ? 2 : 0 }} />
+                })}
+              </div>
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {[
@@ -501,8 +588,9 @@ export default function InventoryPage() {
                     const color = weeks < 4 ? T.red : weeks < 8 ? T.yellow : T.green
                     return <Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color }}>{weeks.toFixed(1)}w</Td>
                   }
+                  const isCritical = abcMap[(p.sku||'').toUpperCase()] === 'A' && ((coverRow !== null && coverRow < 4) || (coverUs !== null && coverUs < 4))
                   return (
-                    <tr key={p.id || i} className="row-hover" style={{ opacity: p._sheetOnly ? 0.85 : 1 }}>
+                    <tr key={p.id || i} className="row-hover" style={{ opacity: p._sheetOnly ? 0.85 : 1, borderLeft: isCritical ? `3px solid ${T.red}` : '3px solid transparent' }}>
                       <Td style={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {p.product_name}
                         {p._sheetOnly && <span style={{ marginLeft: 6, fontSize: 9, background: T.yellow + '30', color: T.yellow, borderRadius: 3, padding: '1px 5px', fontWeight: 700, verticalAlign: 'middle' }}>SHEET</span>}
@@ -682,6 +770,57 @@ export default function InventoryPage() {
               <span style={{ fontSize: 12, color: T.muted }}>🇺🇸 US total: <strong style={{ color: '#8b5cf6' }}>{snapData.reduce((s, r) => s + (r.qty_us || 0), 0).toLocaleString()}</strong></span>
             </div>
           )}
+        </Card>
+      </>}
+
+      {/* ── STYLE VIEW ── */}
+      {view === 'style' && <>
+        <div style={{ marginBottom: 12, fontSize: 13, color: T.muted }}>
+          {styleGroups.length.toLocaleString()} styles · grouped by base product · apply filters above to narrow down
+        </div>
+        <Card>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: T.surface }}>
+                  <Th>Product</Th>
+                  <Th>Base SKU</Th>
+                  <Th style={{ textAlign: 'right', color: '#3b82f6' }}>🇬🇧 ROW Total</Th>
+                  <Th style={{ textAlign: 'right', color: '#8b5cf6' }}>🇺🇸 US Total</Th>
+                  <Th style={{ textAlign: 'right' }}>Combined</Th>
+                  <Th>Size Breakdown</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {styleGroups.length === 0 ? (
+                  <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: T.muted }}>No styles found</td></tr>
+                ) : styleGroups.map((g, i) => (
+                  <tr key={g.base_sku} className="row-hover" style={{ borderTop: `1px solid ${T.border}` }}>
+                    <Td style={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.product_name}</Td>
+                    <Td style={{ fontFamily: 'monospace', fontSize: 11, color: T.muted }}>{g.base_sku}</Td>
+                    <Td style={{ textAlign: 'right', fontWeight: 700, color: g.total_uk === 0 ? T.red : g.total_uk < 20 ? T.yellow : '#3b82f6' }}>{g.total_uk.toLocaleString()}</Td>
+                    <Td style={{ textAlign: 'right', fontWeight: 700, color: g.total_us === 0 ? T.red : g.total_us < 20 ? T.yellow : '#8b5cf6' }}>{g.total_us.toLocaleString()}</Td>
+                    <Td style={{ textAlign: 'right', fontWeight: 700 }}>{(g.total_uk + g.total_us).toLocaleString()}</Td>
+                    <Td>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {g.sizes.sort((a,b) => {
+                          const ORDER = ['XS','S','M','L','XL','XXL','XXXL','OS','ONE SIZE']
+                          return ORDER.indexOf(a.size) - ORDER.indexOf(b.size)
+                        }).map(s => (
+                          <span key={s.size} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 7px', fontSize: 11, whiteSpace: 'nowrap' }}>
+                            <span style={{ fontWeight: 700, color: T.text }}>{s.size}</span>
+                            <span style={{ color: '#3b82f6', marginLeft: 4 }}>{s.qty_uk}</span>
+                            <span style={{ color: T.border, marginLeft: 2 }}>/</span>
+                            <span style={{ color: '#8b5cf6', marginLeft: 2 }}>{s.qty_us}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       </>}
 

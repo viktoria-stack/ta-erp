@@ -148,6 +148,7 @@ export default function SalesPage() {
   const [sortCol, setSortCol]     = useState('revenue')
   const [sortAsc, setSortAsc]     = useState(false)
   const [page, setPage]           = useState(0)
+  const [trendGrouping, setTrendGrouping] = useState('day')
   const [activeView, setActiveView] = useState('products')
   const [geo, setGeo]             = useState({ countries: [], channels: [] })
   const [geoLoading, setGeoLoading] = useState(false)
@@ -209,6 +210,28 @@ export default function SalesPage() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const pageItems  = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
+  const groupedTrend = useMemo(() => {
+    if (trendGrouping === 'day' || !insights.trend.length) return insights.trend
+    const map = {}
+    for (const d of insights.trend) {
+      let key
+      if (trendGrouping === 'week') {
+        const [y, m, dy] = [d.date.slice(0,4), d.date.slice(4,6), d.date.slice(6,8)]
+        const dt = new Date(`${y}-${m}-${dy}`)
+        const dow = dt.getDay()
+        dt.setDate(dt.getDate() - (dow === 0 ? 6 : dow - 1))
+        key = dt.toISOString().slice(0,10).replace(/-/g,'')
+      } else {
+        key = d.date.slice(0,6) + '01'
+      }
+      if (!map[key]) map[key] = { date: key, revenue: 0, transactions: 0, sessions: 0 }
+      map[key].revenue      += d.revenue
+      map[key].transactions += d.transactions
+      map[key].sessions     += d.sessions
+    }
+    return Object.values(map).sort((a,b) => a.date.localeCompare(b.date))
+  }, [insights.trend, trendGrouping])
+
   useEffect(() => { setPage(0) }, [search, sortCol, sortAsc, store, days, startDate, endDate])
 
   const totalRevenue   = rows.reduce((s, r) => s + r.revenue, 0)
@@ -232,6 +255,28 @@ export default function SalesPage() {
   const convRate = r => r.viewed > 0 ? ((r.purchased / r.viewed) * 100).toFixed(1) + '%' : '—'
 
   const { funnel } = insights
+
+  const exportCSV = () => {
+    const headers = ['Rank','Product','SKU','Revenue (GBP)','Items Sold','Views','Conv Rate','vs Prev Period']
+    const csvRows = filtered.map((r, i) => [
+      i + 1,
+      `"${(r.item_name || '').replace(/"/g, '""')}"`,
+      r.item_id || '',
+      (r.revenue || 0).toFixed(2),
+      r.purchased || 0,
+      r.viewed || 0,
+      r.viewed > 0 ? ((r.purchased / r.viewed) * 100).toFixed(1) + '%' : '',
+      r.revenue_prev > 0 ? (((r.revenue - r.revenue_prev) / r.revenue_prev) * 100).toFixed(1) + '%' : '',
+    ])
+    const csv = [headers.join(','), ...csvRows.map(r => r.join(','))].join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `sales-${store}-${isCustom ? startDate + '_' + endDate : days + 'd'}.csv`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <Shell title="Sales">
@@ -338,6 +383,9 @@ export default function SalesPage() {
                 )}
                 {!loading && <span style={{ marginLeft: 'auto', fontSize: 12, color: T.muted }}>{filtered.length} products</span>}
                 {!loading && totalPages > 1 && <span style={{ fontSize: 12, color: T.muted }}>Page {page + 1} of {totalPages}</span>}
+                <button onClick={exportCSV} style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.muted, borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  ⬇ Export CSV
+                </button>
               </div>
 
               {loading ? <Loading /> : (
@@ -353,17 +401,21 @@ export default function SalesPage() {
                           <SortTh col="purchased" right>Sold</SortTh>
                           <SortTh col="viewed" right>Views</SortTh>
                           <Th style={{ textAlign: 'right' }}>Conv.</Th>
+                          <Th style={{ textAlign: 'center' }}>Trend</Th>
                         </tr>
                       </thead>
                       <tbody>
                         {pageItems.length === 0 ? (
-                          <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: T.muted, fontSize: 13 }}>
+                          <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: T.muted, fontSize: 13 }}>
                             No sales data found for this period
                           </td></tr>
                         ) : pageItems.map((r, i) => {
                           const rank = page * PAGE_SIZE + i
                           return (
-                            <tr key={r.item_id + rank} className="row-hover" style={{ borderTop: `1px solid ${T.border}` }}>
+                            <tr key={r.item_id + rank} className="row-hover" style={{
+                              borderTop: `1px solid ${T.border}`,
+                              borderLeft: rank === 0 ? '3px solid #f59e0b' : rank === 1 ? '3px solid #94a3b8' : rank === 2 ? '3px solid #cd7f32' : rank < 10 ? `3px solid ${T.accent}30` : '3px solid transparent',
+                            }}>
                               <Td style={{ textAlign: 'center', color: T.muted, fontSize: 12, fontWeight: 700 }}>
                                 {rank < 3 ? ['🥇','🥈','🥉'][rank] : rank + 1}
                               </Td>
@@ -380,6 +432,20 @@ export default function SalesPage() {
                                 {r.viewed > 0 ? fmtNum(r.viewed) : <span style={{ color: T.border }}>—</span>}
                               </Td>
                               <Td style={{ textAlign: 'right', color: T.muted, fontSize: 12 }}>{convRate(r)}</Td>
+                              <Td style={{ textAlign: 'center' }}>
+                                {(r.revenue > 0 || r.revenue_prev > 0) && (() => {
+                                  const maxV = Math.max(r.revenue, r.revenue_prev, 1)
+                                  const hP = Math.max(2, Math.round((r.revenue_prev / maxV) * 16))
+                                  const hC = Math.max(2, Math.round((r.revenue / maxV) * 16))
+                                  const up = r.revenue >= r.revenue_prev
+                                  return (
+                                    <div style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 2, height: 16 }}>
+                                      <div style={{ width: 5, height: hP, background: T.border, borderRadius: 1 }} />
+                                      <div style={{ width: 5, height: hC, background: up ? T.green : T.red, borderRadius: 1 }} />
+                                    </div>
+                                  )
+                                })()}
+                              </Td>
                             </tr>
                           )
                         })}
@@ -415,9 +481,19 @@ export default function SalesPage() {
           {/* Revenue Trend view */}
           {activeView === 'trend' && (
             insightsLoading ? <Loading /> : (
-              <SectionCard title="Daily Revenue">
+              <>
+                <div style={{ display: 'flex', gap: 4, marginBottom: 12, background: T.card, border: `1px solid ${T.border}`, borderRadius: 7, padding: 3, alignSelf: 'flex-start' }}>
+                  {[['day','Daily'],['week','Weekly'],['month','Monthly']].map(([v,l]) => (
+                    <button key={v} onClick={() => setTrendGrouping(v)} style={{
+                      background: trendGrouping === v ? T.accent : 'transparent',
+                      color: trendGrouping === v ? '#fff' : T.muted,
+                      border: 'none', borderRadius: 5, padding: '5px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    }}>{l}</button>
+                  ))}
+                </div>
+                <SectionCard title={trendGrouping === 'day' ? 'Daily Revenue' : trendGrouping === 'week' ? 'Weekly Revenue' : 'Monthly Revenue'}>
                 <div style={{ padding: '20px 20px 8px' }}>
-                  <TrendChart trend={insights.trend} />
+                  <TrendChart trend={groupedTrend} />
                 </div>
                 {insights.trend.length > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0, borderTop: `1px solid ${T.border}` }}>
@@ -434,6 +510,7 @@ export default function SalesPage() {
                   </div>
                 )}
               </SectionCard>
+              </>
             )
           )}
 
