@@ -126,7 +126,7 @@ export async function GET(req) {
         { startDate: prevStart, endDate: prevEnd, name: 'previous' },
       ],
       orderBys: [{ metric: { metricName: 'itemRevenue' }, desc: true }],
-      limit: 100,
+      limit: 5000,
     }
 
     let rows
