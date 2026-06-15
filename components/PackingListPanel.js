@@ -1,93 +1,91 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { T, Th, Td } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 
-// ─── Parse packing list Excel — extracts SKU Summary section ───
+const norm = s => String(s || '').toLowerCase().trim()
+
 function parsePackingList(buffer) {
   const wb = XLSX.read(buffer, { type: 'array' })
   const ws = wb.Sheets[wb.SheetNames[0]]
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
+  if (!rows.length) return { items: [], error: 'Empty file' }
 
-  // Find "Packing List Summary" header row
-  let summaryStart = -1
-  for (let i = 0; i < rows.length; i++) {
+  const matches = (h, patterns) => patterns.some(p => h === p || h.includes(p))
+  const SKU_P  = ['variant sku', 'sku', 'item code', 'style no', 'style number', 'article no', 'article', 'product code', 'reference', 'barcode']
+  const QTY_P  = ['variant inventory qty', 'inventory qty', 'total qty', 'total units', 'carton qty', 'qty', 'quantity', 'units']
+  const NAME_P = ['title', 'description', 'product name', 'style name', 'name']
+
+  let headerRow = -1, skuCol = -1, qtyCol = -1, nameCol = -1
+
+  for (let i = 0; i < Math.min(20, rows.length); i++) {
     const r = rows[i]
-    if (r && r.some(c => c && String(c).toLowerCase().includes('packing list summary'))) {
-      summaryStart = i
+    if (!r) continue
+    const nh = r.map(norm)
+    const si = nh.findIndex(h => matches(h, SKU_P))
+    if (si >= 0) {
+      headerRow = i; skuCol = si
+      qtyCol  = nh.findIndex(h => matches(h, QTY_P))
+      nameCol = nh.findIndex(h => matches(h, NAME_P))
       break
     }
   }
 
-  // If no summary section, fall back to full packing list rows
-  let dataStart = summaryStart >= 0 ? summaryStart + 2 : -1
-
-  // Find header row with SKU column
-  if (dataStart < 0) {
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i]
-      if (r && r.some(c => c && String(c).toUpperCase() === 'SKU')) {
-        dataStart = i + 1
-        break
-      }
-    }
+  if (headerRow < 0) {
+    const preview = rows.slice(0, 6)
+      .map(r => (r || []).filter(Boolean).slice(0, 6).join(' | '))
+      .filter(Boolean).join('\n')
+    return { items: [], error: `Nenašiel sa stĺpec SKU. Prvé riadky súboru:\n${preview || '(prázdne)'}` }
   }
-
-  if (dataStart < 0) return []
 
   const items = []
-  for (let i = dataStart; i < rows.length; i++) {
+  for (let i = headerRow + 1; i < rows.length; i++) {
     const r = rows[i]
-    if (!r || !r[3]) continue // SKU in col 3
-    const sku = String(r[3]).trim()
-    if (!sku || sku.toLowerCase() === 'sku') continue
-    if (String(r[1] || '').toLowerCase() === 'total') continue
-
-    const product_name = String(r[1] || '').trim()
-    const units = parseInt(r[4]) || 0
+    if (!r) continue
+    const sku = String(r[skuCol] || '').trim()
+    if (!sku || norm(sku) === 'sku' || norm(sku) === 'total') continue
+    const units = qtyCol >= 0 ? (parseInt(r[qtyCol]) || 0) : 0
     if (units === 0) continue
-
+    const product_name = nameCol >= 0 ? String(r[nameCol] || '').trim() : ''
     items.push({ sku, product_name, units_actual: units })
   }
-  return items
+
+  if (!items.length) {
+    const headers = rows[headerRow].filter(Boolean).join(', ')
+    return { items: [], error: `Hlavička nájdená (riadok ${headerRow + 1}): ${headers}\nAle žiadne položky s qty > 0. SKU stĺpec: ${skuCol + 1}, Qty stĺpec: ${qtyCol >= 0 ? qtyCol + 1 : 'nenájdený'}.` }
+  }
+  return { items, error: null }
 }
 
-// ─── Generate ASN CSV for US warehouse ─────────────────────────
 function generateASN(shipment, items) {
-  const eta = shipment.eta ? shipment.eta.slice(0,10).split('-').reverse().join('/') : ''
+  const eta = shipment.eta ? shipment.eta.slice(0, 10).split('-').reverse().join('/') : ''
   const rows = [
-    ['PO Number','Business Type','Shipment Number','Facility','Carrier Number','Seal Number','Load Number','Shipping Method','Shipped At','Arrival At','Case Barcode','Sku Code','','Quantity','Country of Origin']
+    ['PO Number', 'Business Type', 'Shipment Number', 'Facility', 'Carrier Number', 'Seal Number', 'Load Number', 'Shipping Method', 'Shipped At', 'Arrival At', 'Case Barcode', 'Sku Code', '', 'Quantity', 'Country of Origin']
   ]
   items.forEach(item => {
-    rows.push([
-      shipment.shipment_ref, '', shipment.shipment_ref, 'FBF06',
-      '', '', '', '', '', eta,
-      '', item.sku, '', item.units_actual, ''
-    ])
+    rows.push([shipment.shipment_ref, '', shipment.shipment_ref, 'FBF06', '', '', '', '', '', eta, '', item.sku, '', item.units_actual, ''])
   })
   const csv = rows.map(r => r.join(',')).join('\r\n')
   const blob = new Blob([csv], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  a.href = url
-  a.download = `${shipment.shipment_ref}_ASN.csv`
-  a.click()
+  a.href = url; a.download = `${shipment.shipment_ref}_ASN.csv`; a.click()
   URL.revokeObjectURL(url)
 }
 
-// ─── Main component ─────────────────────────────────────────────
 export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
-  const [items, setItems] = useState(null) // parsed from Excel
-  const [saved, setSaved] = useState(shipment.packing_list_uploaded || false)
+  const [items, setItems]         = useState(null)
+  const [parseError, setParseError] = useState(null)
+  const [saved, setSaved]         = useState(shipment.packing_list_uploaded || false)
   const [savedItems, setSavedItems] = useState([])
-  const [saving, setSaving] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [saving, setSaving]       = useState(false)
+  const [loading, setLoading]     = useState(false)
+  const [syncMsg, setSyncMsg]     = useState(null)
   const fileRef = useRef()
   const isUS = shipment.dc === 'US'
 
-  // Load saved items
-  async function loadSaved() {
+  const loadSaved = useCallback(async () => {
     setLoading(true)
     const { data } = await supabase
       .from('packing_list_items')
@@ -96,20 +94,27 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
       .order('sku')
     setSavedItems(data || [])
     setLoading(false)
-  }
+  }, [shipment.shipment_ref])
 
-  // Parse uploaded file
+  // Auto-load saved items on mount
+  useEffect(() => {
+    if (shipment.packing_list_uploaded) loadSaved()
+  }, [loadSaved])
+
   async function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
+    e.target.value = ''
+    setParseError(null)
     const buffer = await file.arrayBuffer()
-    const parsed = parsePackingList(new Uint8Array(buffer))
+    const { items: parsed, error } = parsePackingList(new Uint8Array(buffer))
+    if (error) { setParseError(error); return }
 
-    // Match with po_lines to get planned quantities
+    const col = isUS ? 'us' : 'uk'
     const withPlanned = parsed.map(item => {
-      const planned = poLines.find(l => l.sku === item.sku)
+      const planned = poLines.find(l => (l.sku || '').toUpperCase() === item.sku.toUpperCase())
       const units_planned = planned
-        ? (shipment.dc === 'UK' ? (planned.qty_uk || 0) : (planned.qty_us || 0))
+        ? (col === 'uk' ? (planned.qty_uk || 0) : (planned.qty_usa || planned.qty_us || 0))
         : 0
       return { ...item, units_planned }
     })
@@ -118,11 +123,11 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
 
   async function handleSave() {
     if (!items?.length) return
-    setSaving(true)
-
-    // Delete existing and insert new
-    await supabase.from('packing_list_items').delete().eq('shipment_ref', shipment.shipment_ref)
+    setSaving(true); setSyncMsg(null)
+    const col = isUS ? 'us' : 'uk'
     const total = items.reduce((s, i) => s + i.units_actual, 0)
+
+    await supabase.from('packing_list_items').delete().eq('shipment_ref', shipment.shipment_ref)
     await supabase.from('packing_list_items').insert(
       items.map(i => ({
         shipment_id: shipment.id,
@@ -135,8 +140,24 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
     )
     await supabase.from('shipments').update({
       packing_list_uploaded: true,
-      actual_units: total
+      actual_units: total,
     }).eq('id', shipment.id)
+
+    // Sync incoming qty + ETA → inventory_restock
+    if (shipment.eta) {
+      const etaDate = shipment.eta.slice(0, 10)
+      const upsertRows = items.map(i => ({
+        sku: i.sku.toUpperCase(),
+        [`incoming_${col}`]: i.units_actual,
+        [`restock_date_${col}`]: etaDate,
+      }))
+      const { error: syncErr } = await supabase
+        .from('inventory_restock')
+        .upsert(upsertRows, { onConflict: 'sku' })
+      setSyncMsg(syncErr ? `⚠ Inventory sync failed: ${syncErr.message}` : `✓ Inventory updated — restock ${col.toUpperCase()} set to ${etaDate}`)
+    } else {
+      setSyncMsg('⚠ Shipment nemá ETA — inventory restock date nebol aktualizovaný')
+    }
 
     setSaving(false)
     setSaved(true)
@@ -145,38 +166,41 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
     if (onSaved) onSaved()
   }
 
-  const totalActual = (items || savedItems).reduce((s, i) => s + (i.units_actual || 0), 0)
-  const totalPlanned = (items || savedItems).reduce((s, i) => s + (i.units_planned || 0), 0)
-  const totalDiff = totalActual - totalPlanned
-
-  const displayItems = items || (saved ? savedItems : null)
+  const displayItems = items || savedItems
+  const totalActual  = displayItems.reduce((s, i) => s + (i.units_actual || 0), 0)
+  const totalPlanned = displayItems.reduce((s, i) => s + (i.units_planned || 0), 0)
+  const totalDiff    = totalActual - totalPlanned
 
   return (
     <div style={{ marginTop: 16, borderTop: `1px solid ${T.border}`, paddingTop: 16 }}>
+      {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             📦 Packing List
           </span>
-          {saved && <span style={{ background: '#22c55e20', color: '#22c55e', border: '1px solid #22c55e40', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>✓ Uploaded</span>}
+          {saved && (
+            <span style={{ background: '#22c55e20', color: '#22c55e', border: '1px solid #22c55e40', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+              ✓ Uploaded
+            </span>
+          )}
+          {saved && shipment.eta && (
+            <span style={{ background: '#3b82f620', color: '#3b82f6', border: '1px solid #3b82f640', borderRadius: 4, padding: '2px 8px', fontSize: 11 }}>
+              ETA {new Date(shipment.eta).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {saved && !items && (
-            <>
-              {savedItems.length === 0 && (
-                <button onClick={loadSaved} style={{ background: T.subtle, color: T.muted, border: `1px solid ${T.border}`, borderRadius: 5, padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>
-                  View Items
-                </button>
-              )}
-              {isUS && savedItems.length > 0 && (
-                <button onClick={() => generateASN(shipment, savedItems)} style={{ background: '#8b5cf620', color: '#8b5cf6', border: '1px solid #8b5cf640', borderRadius: 5, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  ⬇ Download ASN
-                </button>
-              )}
-            </>
+          {saved && savedItems.length > 0 && isUS && (
+            <button
+              onClick={() => generateASN(shipment, savedItems)}
+              style={{ background: '#8b5cf620', color: '#8b5cf6', border: '1px solid #8b5cf640', borderRadius: 5, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            >
+              ⬇ Download ASN
+            </button>
           )}
           <button
-            onClick={() => fileRef.current.click()}
+            onClick={() => fileRef.current?.click()}
             style={{ background: T.accent, color: '#fff', border: 'none', borderRadius: 5, padding: '5px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
           >
             {saved ? '↻ Re-upload' : '⬆ Upload Packing List'}
@@ -185,25 +209,38 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
         </div>
       </div>
 
-      {/* Preview parsed items */}
-      {displayItems && displayItems.length > 0 && (
+      {/* Parse error */}
+      {parseError && (
+        <div style={{ background: '#ef444415', border: '1px solid #ef444430', borderRadius: 6, padding: '10px 14px', fontSize: 11, color: '#ef4444', marginBottom: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+          ⚠ {parseError}
+        </div>
+      )}
+
+      {/* Sync result message */}
+      {syncMsg && (
+        <div style={{ background: syncMsg.startsWith('✓') ? '#22c55e15' : '#f59e0b15', border: `1px solid ${syncMsg.startsWith('✓') ? '#22c55e30' : '#f59e0b30'}`, borderRadius: 6, padding: '8px 12px', fontSize: 11, color: syncMsg.startsWith('✓') ? '#22c55e' : '#f59e0b', marginBottom: 12 }}>
+          {syncMsg}
+        </div>
+      )}
+
+      {loading && <div style={{ textAlign: 'center', padding: 20, color: T.muted, fontSize: 12 }}>Loading...</div>}
+
+      {!loading && displayItems.length > 0 && (
         <>
           {/* Summary bar */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 10, padding: '8px 12px', background: T.surface, borderRadius: 6, fontSize: 12 }}>
             <span style={{ color: T.muted }}>{displayItems.length} SKUs</span>
             <span style={{ color: T.text, fontWeight: 700 }}>Actual: {totalActual.toLocaleString()} units</span>
-            {totalPlanned > 0 && (
-              <>
-                <span style={{ color: T.muted }}>Planned: {totalPlanned.toLocaleString()}</span>
-                <span style={{ color: totalDiff === 0 ? '#22c55e' : totalDiff > 0 ? '#f59e0b' : '#ef4444', fontWeight: 700 }}>
-                  {totalDiff > 0 ? '+' : ''}{totalDiff} diff
-                </span>
-              </>
-            )}
+            {totalPlanned > 0 && <>
+              <span style={{ color: T.muted }}>Planned: {totalPlanned.toLocaleString()}</span>
+              <span style={{ color: totalDiff === 0 ? '#22c55e' : totalDiff > 0 ? '#f59e0b' : '#ef4444', fontWeight: 700 }}>
+                {totalDiff > 0 ? '+' : ''}{totalDiff} diff
+              </span>
+            </>}
           </div>
 
           {/* Table */}
-          <div style={{ overflowX: 'auto', maxHeight: 300, overflowY: 'auto', border: `1px solid ${T.border}`, borderRadius: 6 }}>
+          <div style={{ overflowX: 'auto', maxHeight: 320, overflowY: 'auto', border: `1px solid ${T.border}`, borderRadius: 6 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ position: 'sticky', top: 0 }}>
                 <tr style={{ background: T.surface }}>
@@ -232,33 +269,30 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
             </table>
           </div>
 
-          {/* Save + ASN buttons for new upload */}
+          {/* Save / Cancel buttons (only when fresh upload, not viewing saved) */}
           {items && (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
-              <button onClick={() => setItems(null)} style={{ background: T.subtle, color: T.muted, border: 'none', borderRadius: 5, padding: '7px 14px', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setItems(null); setParseError(null) }} style={{ background: T.subtle, color: T.muted, border: 'none', borderRadius: 5, padding: '7px 14px', fontSize: 12, cursor: 'pointer' }}>
+                Cancel
+              </button>
               {isUS && (
                 <button onClick={() => generateASN(shipment, items)} style={{ background: '#8b5cf620', color: '#8b5cf6', border: '1px solid #8b5cf640', borderRadius: 5, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   ⬇ Download ASN
                 </button>
               )}
               <button onClick={handleSave} disabled={saving} style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 5, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
-                {saving ? 'Saving...' : '✓ Save Packing List'}
-              </button>
-            </div>
-          )}
-
-          {/* ASN button for already saved US shipment */}
-          {!items && isUS && savedItems.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-              <button onClick={() => generateASN(shipment, savedItems)} style={{ background: '#8b5cf620', color: '#8b5cf6', border: '1px solid #8b5cf640', borderRadius: 5, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                ⬇ Download ASN CSV
+                {saving ? 'Saving...' : `✓ Save${shipment.eta ? ' & Sync Inventory' : ''}`}
               </button>
             </div>
           )}
         </>
       )}
 
-      {loading && <div style={{ textAlign: 'center', padding: 20, color: T.muted, fontSize: 12 }}>Loading...</div>}
+      {!loading && !items && saved && savedItems.length === 0 && !parseError && (
+        <div style={{ textAlign: 'center', padding: '14px 0', color: T.muted, fontSize: 12 }}>
+          No items found in saved packing list.
+        </div>
+      )}
     </div>
   )
 }
