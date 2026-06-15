@@ -16,29 +16,71 @@ function parsePackingList(buffer) {
   const SKU_P  = ['variant sku', 'sku', 'item code', 'style no', 'style number', 'article no', 'article', 'product code', 'reference']
   const QTY_P  = ['variant inventory qty', 'inventory qty', 'total qty', 'total units', 'carton qty', 'units', 'qty', 'quantity']
   const NAME_P = ['title', 'description', 'product name', 'style name', 'name']
+  const SIZES  = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', '2xl', 'xxxl', '3xl', '4xl', 'os', 'one size', 'one-size', 'free size', 'universal'])
+
+  // ── Strategy 0: UK size-split format ──
+  // Main table: header row has SKU, sub-header row has size names (S, M, L, XL, 2XL...)
+  // Each data row has qty in only one size column; same SKU may appear in multiple rows (cartons)
+  for (let i = 0; i < Math.min(25, rows.length); i++) {
+    const r = rows[i]
+    if (!r) continue
+    const nh = r.map(norm)
+    const si = nh.findIndex(h => matches(h, SKU_P))
+    if (si < 0) continue
+
+    // Check if the NEXT non-empty row has ≥2 size column headers
+    let sizeRow = null
+    for (let k = i + 1; k < Math.min(i + 4, rows.length); k++) {
+      if (rows[k] && rows[k].some(Boolean)) { sizeRow = rows[k]; break }
+    }
+    if (!sizeRow) continue
+    const sizeNh = sizeRow.map(norm)
+    const sizeCols = sizeNh.reduce((acc, h, idx) => { if (SIZES.has(h)) acc.push(idx); return acc }, [])
+    if (sizeCols.length < 2) continue // not a size-split table
+
+    // Found UK-style table — read data rows, sum qty across size columns per SKU
+    const nameCol = nh.findIndex(h => matches(h, NAME_P))
+    const skuMap  = {}
+    // find where data actually starts (skip sub-header rows)
+    const dataStart = rows.indexOf(sizeRow) + 1
+    for (let j = dataStart; j < rows.length; j++) {
+      const d = rows[j]
+      if (!d) continue
+      if (d.some(c => norm(c).includes('packing list summary'))) break
+      if (d.some(c => norm(c) === 'total')) continue
+      const sku = String(d[si] || '').trim()
+      if (!sku || norm(sku) === 'sku') continue
+      const qty = sizeCols.reduce((sum, ci) => sum + (parseInt(d[ci]) || 0), 0)
+      if (qty === 0) continue
+      const pn = nameCol >= 0 ? String(d[nameCol] || '').trim() : ''
+      if (skuMap[sku]) { skuMap[sku].units_actual += qty }
+      else { skuMap[sku] = { sku, product_name: pn, units_actual: qty } }
+    }
+    const items = Object.values(skuMap)
+    if (items.length > 0) return { items, error: null }
+  }
 
   // ── Strategy 1: scan entire file for "Packing List Summary" section ──
-  // UK format: main table has per-size columns, but summary at bottom has SKU + Units
+  // For formats where the summary table has flat SKU + Units rows
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i]
     if (!r) continue
     if (!r.some(c => norm(c).includes('packing list summary'))) continue
 
-    // Found summary title row — find the header row below it (has SKU column)
     let skuCol = -1, qtyCol = -1, nameCol = -1, headerRow = -1
     for (let j = i + 1; j < Math.min(i + 6, rows.length); j++) {
       const hr = rows[j]
       if (!hr) continue
       const nh = hr.map(norm)
       const si = nh.findIndex(h => matches(h, SKU_P))
-      if (si >= 0) {
-        headerRow = j; skuCol = si
-        qtyCol  = nh.findIndex(h => matches(h, QTY_P))
+      const qi = nh.findIndex(h => matches(h, QTY_P))
+      if (si >= 0 && qi >= 0) {
+        headerRow = j; skuCol = si; qtyCol = qi
         nameCol = nh.findIndex(h => matches(h, NAME_P))
         break
       }
     }
-    if (headerRow < 0 || skuCol < 0) continue
+    if (headerRow < 0 || skuCol < 0 || qtyCol < 0) continue
 
     const items = []
     for (let j = headerRow + 1; j < rows.length; j++) {
@@ -46,7 +88,7 @@ function parsePackingList(buffer) {
       if (!r2) continue
       const sku = String(r2[skuCol] || '').trim()
       if (!sku || norm(sku) === 'sku' || norm(sku) === 'total') continue
-      const units = qtyCol >= 0 ? (parseInt(r2[qtyCol]) || 0) : 0
+      const units = parseInt(r2[qtyCol]) || 0
       if (units === 0) continue
       const product_name = nameCol >= 0 ? String(r2[nameCol] || '').trim() : ''
       items.push({ sku, product_name, units_actual: units })
