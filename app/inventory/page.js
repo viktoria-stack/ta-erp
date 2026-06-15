@@ -106,6 +106,19 @@ export default function InventoryPage() {
   const [snapSearch, setSnapSearch] = useState('')
   const snapTimer = useRef(null)
 
+  // ── Incoming stock from packing lists (inventory_incoming table)
+  const [incoming, setIncoming] = useState({})
+  useEffect(() => {
+    supabase.from('inventory_incoming').select('*')
+      .then(({ data }) => {
+        if (!data) return
+        const map = {}
+        data.forEach(r => { map[r.sku.toUpperCase()] = r })
+        setIncoming(map)
+      })
+      .catch(() => {})
+  }, [])
+
   // ── Sheet qty (Maxtrify) — primary source of qty + title for sheet-only items
   const [sheetQty, setSheetQty] = useState({})
   useEffect(() => {
@@ -184,7 +197,7 @@ export default function InventoryPage() {
   // Reset page when any filter changes
   useEffect(() => { setPage(0) }, [search, store, abcFilter, coverSort])
 
-  // ── Merge: Supabase items + sheet-only items (in Maxtrify but not in ERP DB)
+  // ── Merge: Supabase items + sheet-only items, overlaid with inventory_incoming data
   const mergedItems = useMemo(() => {
     const supabaseSkus = new Set(supabaseItems.map(p => (p.sku || '').toUpperCase()))
     const sheetOnly = Object.entries(sheetQty)
@@ -204,8 +217,20 @@ export default function InventoryPage() {
           _sheetOnly: true,
         }
       })
-    return [...supabaseItems, ...sheetOnly]
-  }, [supabaseItems, sheetQty])
+    // Overlay incoming data from packing lists
+    const overlay = item => {
+      const inc = incoming[(item.sku || '').toUpperCase()]
+      if (!inc) return item
+      return {
+        ...item,
+        incoming_uk:     inc.incoming_uk     ?? item.incoming_uk,
+        incoming_us:     inc.incoming_us     ?? item.incoming_us,
+        restock_date_uk: inc.restock_date_uk ?? item.restock_date_uk,
+        restock_date_us: inc.restock_date_us ?? item.restock_date_us,
+      }
+    }
+    return [...supabaseItems.map(overlay), ...sheetOnly.map(overlay)]
+  }, [supabaseItems, sheetQty, incoming])
 
   // ── Client-side filter + sort
   const filteredItems = useMemo(() => {

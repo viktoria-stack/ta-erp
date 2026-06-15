@@ -224,16 +224,18 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
       actual_units: total,
     }).eq('id', shipment.id)
 
-    // Sync incoming qty + ETA → inventory_restock
+    // Sync incoming qty + ETA → inventory_incoming
     if (shipment.eta) {
       const etaDate = shipment.eta.slice(0, 10)
       const upsertRows = items.map(i => ({
         sku: i.sku.toUpperCase(),
         [`incoming_${col}`]: i.units_actual,
         [`restock_date_${col}`]: etaDate,
+        shipment_ref: shipment.shipment_ref,
+        updated_at: new Date().toISOString(),
       }))
       const { error: syncErr } = await supabase
-        .from('inventory_restock')
+        .from('inventory_incoming')
         .upsert(upsertRows, { onConflict: 'sku' })
       setSyncMsg(syncErr ? `⚠ Inventory sync failed: ${syncErr.message}` : `✓ Inventory updated — restock ${col.toUpperCase()} set to ${etaDate}`)
     } else {
