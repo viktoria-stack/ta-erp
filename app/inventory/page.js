@@ -6,33 +6,18 @@ import { T, KPI, Card, Th, Td, BtnPrimary, BtnGhost, Loading, ErrorMsg, fmt } fr
 import { supabase } from '@/lib/supabase'
 
 const PAGE_SIZE = 100
-const MOV_SIZE = 50
+const MOV_SIZE  = 50
+const SIZES     = new Set(['XS','S','M','L','XL','XXL','XXXL','OS','ONE SIZE'])
 
-async function fetchAllInventory({ search, store }) {
-  let query = supabase.from('inventory_restock').select('*')
-  if (store === 'UK') query = query.gt('qty_uk', 0)
-  else if (store === 'US') query = query.gt('qty_us', 0)
-  else if (store === 'Out of stock') query = query.eq('qty_uk', 0).eq('qty_us', 0)
-  else if (store === 'Low stock') query = query.or('qty_uk.lt.10,qty_us.lt.10').or('qty_uk.gt.0,qty_us.gt.0')
-  if (search && search.length >= 2)
-    query = query.or(`product_name.ilike.%${search}%,sku.ilike.%${search}%,barcode.ilike.%${search}%,size.ilike.%${search}%`)
-  const { data, error } = await query.order('product_name').order('size')
+// Load ALL Supabase items — no filters (filtering is client-side now)
+async function fetchAllSupabase() {
+  const { data, error } = await supabase
+    .from('inventory_restock')
+    .select('*')
+    .order('product_name')
+    .order('size')
   if (error) throw error
   return data || []
-}
-
-async function fetchInventory({ search, store, page }) {
-  let query = supabase.from('inventory_restock').select('*', { count: 'exact' })
-  if (store === 'UK') query = query.gt('qty_uk', 0)
-  else if (store === 'US') query = query.gt('qty_us', 0)
-  else if (store === 'Out of stock') query = query.eq('qty_uk', 0).eq('qty_us', 0)
-  else if (store === 'Low stock') query = query.or('qty_uk.lt.10,qty_us.lt.10').or('qty_uk.gt.0,qty_us.gt.0')
-  if (search && search.length >= 2)
-    query = query.or(`product_name.ilike.%${search}%,sku.ilike.%${search}%,barcode.ilike.%${search}%,size.ilike.%${search}%`)
-  const from = page * PAGE_SIZE
-  const { data, error, count } = await query.order('product_name').order('size').range(from, from + PAGE_SIZE - 1)
-  if (error) throw error
-  return { data: data || [], total: count || 0 }
 }
 
 async function fetchKPIs() {
@@ -87,42 +72,41 @@ const fmtDateTime = (ts) => {
 }
 
 export default function InventoryPage() {
-  const [view, setView] = useState('live') // 'live' | 'movements' | 'snapshot'
+  const [view, setView] = useState('live')
 
-  // Live
-  const [items, setItems] = useState([])
-  const [total, setTotal] = useState(0)
-  const [kpis, setKpis] = useState(null)
+  // ── Live: all Supabase items loaded once
+  const [supabaseItems, setSupabaseItems] = useState([])
+  const [kpis, setKpis]     = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [store, setStore] = useState('All')
+  const [error, setError]   = useState('')
+  const [store, setStore]   = useState('All')
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
-  const [page, setPage] = useState(0)
+  const [page, setPage]     = useState(0)
   const [exporting, setExporting] = useState(false)
   const searchTimer = useRef(null)
 
-  // Movements
-  const [movements, setMovements] = useState([])
-  const [movTotal, setMovTotal] = useState(0)
-  const [movPage, setMovPage] = useState(0)
-  const [movSearch, setMovSearch] = useState('')
+  // ── Movements
+  const [movements, setMovements]       = useState([])
+  const [movTotal, setMovTotal]         = useState(0)
+  const [movPage, setMovPage]           = useState(0)
+  const [movSearch, setMovSearch]       = useState('')
   const [movSearchInput, setMovSearchInput] = useState('')
-  const [movLoading, setMovLoading] = useState(false)
+  const [movLoading, setMovLoading]     = useState(false)
   const movTimer = useRef(null)
 
-  // Snapshot
-  const [snapDate, setSnapDate] = useState(new Date().toISOString().slice(0, 10))
-  const [snapData, setSnapData] = useState([])
+  // ── Snapshot
+  const [snapDate, setSnapDate]     = useState(new Date().toISOString().slice(0, 10))
+  const [snapData, setSnapData]     = useState([])
   const [snapLoading, setSnapLoading] = useState(false)
-  const [snapError, setSnapError] = useState('')
-  const [snapping, setSnapping] = useState(false)
-  const [snapMsg, setSnapMsg] = useState('')
+  const [snapError, setSnapError]   = useState('')
+  const [snapping, setSnapping]     = useState(false)
+  const [snapMsg, setSnapMsg]       = useState('')
   const [snapSearchInput, setSnapSearchInput] = useState('')
   const [snapSearch, setSnapSearch] = useState('')
   const snapTimer = useRef(null)
 
-  // Sheet qty map keyed by SKU uppercase (Maxtrify live stock)
+  // ── Sheet qty (Maxtrify) — primary source of qty + title for sheet-only items
   const [sheetQty, setSheetQty] = useState({})
   useEffect(() => {
     fetch('/api/inventory-data')
@@ -130,14 +114,20 @@ export default function InventoryPage() {
       .then(d => {
         if (d.items) {
           const map = {}
-          d.items.forEach(i => { map[i.sku.toUpperCase()] = { qty_uk: i.qty_row ?? 0, qty_us: i.qty_us ?? 0 } })
+          d.items.forEach(i => {
+            map[i.sku.toUpperCase()] = {
+              qty_uk: i.qty_row ?? 0,
+              qty_us: i.qty_us  ?? 0,
+              title:  i.title   || '',
+            }
+          })
           setSheetQty(map)
         }
       })
       .catch(() => {})
   }, [])
 
-  // GA4 weekly sales keyed by SKU uppercase (last 7 days)
+  // ── GA4 weekly sales
   const [weeklySales, setWeeklySales] = useState({})
   useEffect(() => {
     Promise.all([
@@ -178,30 +168,101 @@ export default function InventoryPage() {
     return map
   }, [weeklySales])
 
-  // ── Live data
-  const load = useCallback(async (s, st, p, allForCover = false) => {
+  // ── Load ALL Supabase items once on mount
+  const loadSupabase = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      if (allForCover) {
-        const data = await fetchAllInventory({ search: s, store: st })
-        setItems(data); setTotal(data.length)
-      } else {
-        const { data, total } = await fetchInventory({ search: s, store: st, page: p })
-        setItems(data); setTotal(total)
-      }
+      const data = await fetchAllSupabase()
+      setSupabaseItems(data)
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
 
   useEffect(() => { fetchKPIs().then(setKpis).catch(() => {}) }, [])
-  useEffect(() => { load(search, store, page, coverSort || abcFilter !== 'All') }, [search, store, page, coverSort, abcFilter])
+  useEffect(() => { loadSupabase() }, [])
+
+  // Reset page when any filter changes
+  useEffect(() => { setPage(0) }, [search, store, abcFilter, coverSort])
+
+  // ── Merge: Supabase items + sheet-only items (in Maxtrify but not in ERP DB)
+  const mergedItems = useMemo(() => {
+    const supabaseSkus = new Set(supabaseItems.map(p => (p.sku || '').toUpperCase()))
+    const sheetOnly = Object.entries(sheetQty)
+      .filter(([sku, v]) => !supabaseSkus.has(sku) && (v.qty_uk > 0 || v.qty_us > 0))
+      .map(([sku, v]) => {
+        const parts = sku.split('-')
+        const last  = parts[parts.length - 1]
+        return {
+          id: `sheet-${sku}`,
+          product_name: v.title || sku,
+          sku,
+          size: SIZES.has(last) ? last : null,
+          qty_uk: 0, qty_us: 0,
+          cost_price: null, retail_price: null, barcode: null,
+          incoming_uk: null, incoming_us: null,
+          restock_date_uk: null, restock_date_us: null,
+          _sheetOnly: true,
+        }
+      })
+    return [...supabaseItems, ...sheetOnly]
+  }, [supabaseItems, sheetQty])
+
+  // ── Client-side filter + sort
+  const filteredItems = useMemo(() => {
+    let result = mergedItems
+
+    if (search && search.length >= 2) {
+      const q = search.toLowerCase()
+      result = result.filter(p =>
+        (p.product_name || '').toLowerCase().includes(q) ||
+        (p.sku          || '').toLowerCase().includes(q) ||
+        (p.barcode      || '').toLowerCase().includes(q) ||
+        (p.size         || '').toLowerCase().includes(q)
+      )
+    }
+
+    if (store !== 'All') {
+      result = result.filter(p => {
+        const sq   = sheetQty[(p.sku || '').toUpperCase()] || {}
+        const qRow = sq.qty_uk ?? p.qty_uk ?? 0
+        const qUs  = sq.qty_us ?? p.qty_us ?? 0
+        if (store === 'UK')           return qRow > 0
+        if (store === 'US')           return qUs  > 0
+        if (store === 'Out of stock') return qRow === 0 && qUs === 0
+        if (store === 'Low stock')    return (qRow > 0 && qRow < 10) || (qUs > 0 && qUs < 10)
+        return true
+      })
+    }
+
+    if (abcFilter !== 'All') {
+      result = result.filter(p => abcMap[(p.sku || '').toUpperCase()] === abcFilter)
+    }
+
+    return [...result].sort((a, b) => {
+      if (coverSort) {
+        const cover = p => {
+          const sq = sheetQty[(p.sku || '').toUpperCase()] || {}
+          const ws = weeklySales[(p.sku || '').toUpperCase()] || {}
+          const cr = ws.row > 0 ? (sq.qty_uk ?? 0) / ws.row : Infinity
+          const cu = ws.us  > 0 ? (sq.qty_us ?? 0) / ws.us  : Infinity
+          return Math.min(cr, cu)
+        }
+        return cover(a) - cover(b)
+      }
+      const nc = (a.product_name || '').localeCompare(b.product_name || '')
+      return nc !== 0 ? nc : (a.size || '').localeCompare(b.size || '')
+    })
+  }, [mergedItems, search, store, abcFilter, abcMap, coverSort, sheetQty, weeklySales])
+
+  const totalPages = Math.ceil(filteredItems.length / PAGE_SIZE)
+  const pageItems  = filteredItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const handleSearch = (val) => {
     setSearchInput(val)
     clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => { setPage(0); setSearch(val) }, 400)
+    searchTimer.current = setTimeout(() => setSearch(val), 300)
   }
-  const handleStore = (s) => { setStore(s); setPage(0) }
+  const handleStore = (s) => setStore(s)
 
   // ── Movements
   const loadMovements = useCallback(async (s, p) => {
@@ -247,7 +308,7 @@ export default function InventoryPage() {
   const takeSnapshotNow = async () => {
     setSnapping(true); setSnapMsg('')
     try {
-      const res = await fetch('/api/inventory-snapshot', { method: 'POST' })
+      const res  = await fetch('/api/inventory-snapshot', { method: 'POST' })
       const data = await res.json()
       if (data.error) setSnapMsg(`Error: ${data.error}`)
       else { setSnapMsg(`✓ Snapshot saved: ${data.upserted} SKUs for ${data.date}`); loadSnapshot(snapDate) }
@@ -255,35 +316,39 @@ export default function InventoryPage() {
     setSnapping(false)
   }
 
-  // ── Export
-  const exportExcel = async () => {
+  // ── Export (uses current filtered view)
+  const exportExcel = () => {
     setExporting(true)
     try {
-      const all = await fetchAllInventory({ search, store })
-      const rows = all.map(p => ({
-        'Product Name': p.product_name || '',
-        'Size': p.size || '',
-        'SKU': p.sku || '',
-        'Barcode': p.barcode || '',
-        'UK Qty': p.qty_uk || 0,
-        'US Qty': p.qty_us || 0,
-        'Total': (p.qty_uk || 0) + (p.qty_us || 0),
-        'Cost Price (GBP)': p.cost_price || '',
-        'Retail Price (GBP)': p.retail_price || '',
-        'UK Incoming': p.incoming_uk || 0,
-        'UK Restock Date': p.restock_date_uk || '',
-        'US Incoming': p.incoming_us || 0,
-        'US Restock Date': p.restock_date_us || '',
-      }))
+      const rows = filteredItems.map(p => {
+        const sq   = sheetQty[(p.sku || '').toUpperCase()] || {}
+        const qRow = sq.qty_uk ?? p.qty_uk ?? 0
+        const qUs  = sq.qty_us ?? p.qty_us ?? 0
+        return {
+          'Product Name':       p.product_name || '',
+          'Size':               p.size || '',
+          'SKU':                p.sku || '',
+          'Barcode':            p.barcode || '',
+          'UK Qty':             qRow,
+          'US Qty':             qUs,
+          'Total':              qRow + qUs,
+          'Cost Price (GBP)':   p.cost_price || '',
+          'Retail Price (GBP)': p.retail_price || '',
+          'UK Incoming':        p.incoming_uk || 0,
+          'UK Restock Date':    p.restock_date_uk || '',
+          'US Incoming':        p.incoming_us || 0,
+          'US Restock Date':    p.restock_date_us || '',
+          'In ERP':             p._sheetOnly ? 'No' : 'Yes',
+        }
+      })
       const ws = XLSX.utils.json_to_sheet(rows)
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Inventory')
-      XLSX.writeFile(wb, `inventory-${store.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.xlsx`)
+      XLSX.writeFile(wb, `inventory-${new Date().toISOString().slice(0, 10)}.xlsx`)
     } catch (e) { console.error('Export failed:', e) }
     setExporting(false)
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE)
   const movTotalPages = Math.ceil(movTotal / MOV_SIZE)
   const qtyStyle = (qty) => ({ textAlign: 'right', fontWeight: qty === 0 ? 400 : 700, color: qty === 0 ? T.border : qty < 10 ? T.yellow : T.text })
 
@@ -300,14 +365,28 @@ export default function InventoryPage() {
     }}>{label}</button>
   )
 
+  const ABCBadge = ({ sku }) => {
+    const grade = abcMap[(sku || '').toUpperCase()]
+    if (!grade) return <span style={{ color: T.border, fontSize: 11 }}>—</span>
+    const colors = { A: '#22c55e', B: '#f59e0b', C: T.muted }
+    return (
+      <span style={{ background: colors[grade] + '20', color: colors[grade], border: `1px solid ${colors[grade]}40`, borderRadius: 3, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{grade}</span>
+    )
+  }
+
   return (
     <Shell title="Inventory">
       {/* KPIs — qty totals from sheet, counts from Supabase */}
       {(() => {
-        const sheetVals  = Object.values(sheetQty)
-        const hasSheet   = sheetVals.length > 0
-        const totalRow   = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_uk || 0), 0) : kpis?.total_uk
-        const totalUs    = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_us || 0), 0) : kpis?.total_us
+        const sheetVals = Object.values(sheetQty)
+        const hasSheet  = sheetVals.length > 0
+        const totalRow  = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_uk || 0), 0) : kpis?.total_uk
+        const totalUs   = hasSheet ? sheetVals.reduce((s, v) => s + (v.qty_us || 0), 0) : kpis?.total_us
+        const sheetOnlyCount = Object.keys(sheetQty).filter(sku => {
+          const v = sheetQty[sku]
+          return (v.qty_uk > 0 || v.qty_us > 0) &&
+            !supabaseItems.some(p => (p.sku || '').toUpperCase() === sku)
+        }).length
         const criticalCount = hasSheet ? Object.entries(sheetQty).filter(([sku, v]) => {
           const ws = weeklySales[sku] || {}
           const coverRow = ws.row > 0 ? v.qty_uk / ws.row : null
@@ -316,11 +395,11 @@ export default function InventoryPage() {
         }).length : null
         return (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 20 }}>
-            <KPI label="Total SKUs" value={kpis ? kpis.total_skus?.toLocaleString() : '…'} />
-            <KPI label="🇬🇧 ROW Units" value={totalRow != null ? totalRow.toLocaleString() : '…'} color="#3b82f6" />
-            <KPI label="🇺🇸 US Units" value={totalUs  != null ? totalUs.toLocaleString()  : '…'} color="#8b5cf6" />
-            <KPI label="Low Stock" value={kpis ? kpis.low_stock?.toLocaleString() : '…'} color={T.yellow} />
-            <KPI label="Out of Stock" value={kpis ? kpis.out_of_stock?.toLocaleString() : '…'} color={T.red} />
+            <KPI label="Total SKUs (ERP)" value={kpis ? kpis.total_skus?.toLocaleString() : '…'} />
+            <KPI label="🇬🇧 ROW Units"    value={totalRow != null ? totalRow.toLocaleString() : '…'} color="#3b82f6" />
+            <KPI label="🇺🇸 US Units"     value={totalUs  != null ? totalUs.toLocaleString()  : '…'} color="#8b5cf6" />
+            <KPI label="Sheet-only SKUs"  value={sheetOnlyCount > 0 ? sheetOnlyCount : '0'} color={sheetOnlyCount > 0 ? T.yellow : T.muted} />
+            <KPI label="Out of Stock"     value={kpis ? kpis.out_of_stock?.toLocaleString() : '…'} color={T.red} />
             <KPI label="⚠ Critical (<4w)" value={criticalCount != null ? criticalCount.toLocaleString() : '…'} color={criticalCount > 0 ? T.red : T.green} />
           </div>
         )
@@ -328,9 +407,9 @@ export default function InventoryPage() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <Tab id="live" label="📦 Live" />
+        <Tab id="live"      label="📦 Live" />
         <Tab id="movements" label="🔄 Movements" />
-        <Tab id="snapshot" label="📸 Snapshot" />
+        <Tab id="snapshot"  label="📸 Snapshot" />
       </div>
 
       {/* ── LIVE VIEW ── */}
@@ -338,10 +417,10 @@ export default function InventoryPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {[
-              { id: 'All', label: 'All' },
-              { id: 'UK', label: '🇬🇧 ROW in stock' },
-              { id: 'US', label: '🇺🇸 US in stock' },
-              { id: 'Low stock', label: '⚠ Low stock' },
+              { id: 'All',          label: 'All' },
+              { id: 'UK',           label: '🇬🇧 ROW in stock' },
+              { id: 'US',           label: '🇺🇸 US in stock' },
+              { id: 'Low stock',    label: '⚠ Low stock' },
               { id: 'Out of stock', label: '✕ Out of stock' },
             ].map(f => (
               <button key={f.id} onClick={() => handleStore(f.id)} style={{
@@ -352,17 +431,17 @@ export default function InventoryPage() {
               }}>{f.label}</button>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <input placeholder="Search product, SKU, barcode…" value={searchInput} onChange={e => handleSearch(e.target.value)}
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: '7px 12px', color: T.text, fontSize: 13, width: 260, outline: 'none' }} />
             <div style={{ width: 1, height: 20, background: T.border }} />
             {[
               { val: 'All', label: 'All' },
-              { val: 'A', label: 'A — Top', color: '#22c55e' },
-              { val: 'B', label: 'B — Mid', color: '#f59e0b' },
-              { val: 'C', label: 'C — Slow', color: T.muted },
+              { val: 'A',   label: 'A — Top', color: '#22c55e' },
+              { val: 'B',   label: 'B — Mid', color: '#f59e0b' },
+              { val: 'C',   label: 'C — Slow', color: T.muted },
             ].map(({ val, label, color }) => (
-              <button key={val} onClick={() => { setAbcFilter(val); setPage(0) }} style={{
+              <button key={val} onClick={() => setAbcFilter(val)} style={{
                 background: abcFilter === val ? (color || T.accent) : T.subtle,
                 color: abcFilter === val ? (val === 'C' ? T.text : '#fff') : T.muted,
                 border: 'none', borderRadius: 4, padding: '5px 12px',
@@ -370,7 +449,7 @@ export default function InventoryPage() {
               }}>{label}</button>
             ))}
             <div style={{ width: 1, height: 20, background: T.border }} />
-            <button onClick={() => { setCoverSort(v => !v); setPage(0) }} style={{ background: coverSort ? T.red : T.subtle, color: coverSort ? '#fff' : T.muted, border: 'none', borderRadius: 4, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <button onClick={() => setCoverSort(v => !v)} style={{ background: coverSort ? T.red : T.subtle, color: coverSort ? '#fff' : T.muted, border: 'none', borderRadius: 4, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               {coverSort ? '⚠ Critical first ✓' : 'Sort by cover'}
             </button>
             <BtnGhost onClick={exportExcel} disabled={exporting}>{exporting ? 'Exporting…' : '⬇ Export Excel'}</BtnGhost>
@@ -405,35 +484,13 @@ export default function InventoryPage() {
                   <tr><td colSpan={17} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
                     <div style={{ display: 'inline-block', width: 20, height: 20, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
                   </td></tr>
-                ) : items.length === 0 ? (
+                ) : pageItems.length === 0 ? (
                   <tr><td colSpan={17} style={{ padding: 40, textAlign: 'center', color: T.muted }}>
-                    {search ? 'No results for your search' : 'No inventory data'}
+                    {search || store !== 'All' || abcFilter !== 'All' ? 'No results for current filters' : 'No inventory data'}
                   </td></tr>
-                ) : (() => {
-                    const ABCBadge = ({ sku }) => {
-                      const grade = abcMap[(sku || '').toUpperCase()]
-                      if (!grade) return <span style={{ color: T.border, fontSize: 11 }}>—</span>
-                      const colors = { A: '#22c55e', B: '#f59e0b', C: T.muted }
-                      return (
-                        <span style={{ background: colors[grade] + '20', color: colors[grade], border: `1px solid ${colors[grade]}40`, borderRadius: 3, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>{grade}</span>
-                      )
-                    }
-                    const visibleItems = abcFilter !== 'All'
-                      ? items.filter(p => abcMap[(p.sku || '').toUpperCase()] === abcFilter)
-                      : items
-                    return [...visibleItems].sort((a, b) => {
-                    if (!coverSort) return 0
-                    const cover = (p) => {
-                      const sq = sheetQty[(p.sku || '').toUpperCase()] || {}
-                      const ws = weeklySales[(p.sku || '').toUpperCase()] || {}
-                      const cr = ws.row > 0 ? (sq.qty_uk ?? 0) / ws.row : Infinity
-                      const cu = ws.us  > 0 ? (sq.qty_us ?? 0) / ws.us  : Infinity
-                      return Math.min(cr, cu)
-                    }
-                    return cover(a) - cover(b)
-                  }).map((p, i) => {
-                  const sq   = sheetQty[(p.sku || '').toUpperCase()] || {}
-                  const ws   = weeklySales[(p.sku || '').toUpperCase()] || {}
+                ) : pageItems.map((p, i) => {
+                  const sq  = sheetQty[(p.sku || '').toUpperCase()] || {}
+                  const ws  = weeklySales[(p.sku || '').toUpperCase()] || {}
                   const qRow = sq.qty_uk ?? p.qty_uk ?? 0
                   const qUs  = sq.qty_us ?? p.qty_us ?? 0
                   const tot  = qRow + qUs
@@ -445,8 +502,11 @@ export default function InventoryPage() {
                     return <Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color }}>{weeks.toFixed(1)}w</Td>
                   }
                   return (
-                    <tr key={p.id || i} className="row-hover">
-                      <Td style={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.product_name}</Td>
+                    <tr key={p.id || i} className="row-hover" style={{ opacity: p._sheetOnly ? 0.85 : 1 }}>
+                      <Td style={{ fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.product_name}
+                        {p._sheetOnly && <span style={{ marginLeft: 6, fontSize: 9, background: T.yellow + '30', color: T.yellow, borderRadius: 3, padding: '1px 5px', fontWeight: 700, verticalAlign: 'middle' }}>SHEET</span>}
+                      </Td>
                       <Td>{p.size ? <span style={{ background: T.subtle, color: T.text, borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{p.size}</span> : <span style={{ color: T.muted, fontSize: 12 }}>—</span>}</Td>
                       <Td style={{ fontFamily: 'monospace', fontSize: 11, color: T.muted }}>{p.sku || '—'}</Td>
                       <Td style={{ fontFamily: 'monospace', fontSize: 11, color: T.muted }}>{p.barcode || '—'}</Td>
@@ -459,30 +519,29 @@ export default function InventoryPage() {
                       {(() => {
                         if (!p.cost_price || !p.retail_price) return <Td style={{ textAlign: 'right', color: T.border, fontSize: 12 }}>—</Td>
                         const margin = ((p.retail_price - p.cost_price) / p.retail_price) * 100
-                        const color = margin >= 80 ? T.green : margin >= 60 ? T.yellow : T.red
+                        const color  = margin >= 80 ? T.green : margin >= 60 ? T.yellow : T.red
                         return <Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color }}>{margin.toFixed(0)}%</Td>
                       })()}
                       <Td style={{ textAlign: 'right', color: '#3b82f6', fontWeight: p.incoming_uk > 0 ? 700 : 400 }}>{p.incoming_uk > 0 ? `+${p.incoming_uk}` : '—'}</Td>
                       <Td style={{ textAlign: 'right', fontSize: 12 }}>
-                        {p.restock_date_uk ? <span style={{ color: new Date(p.restock_date_uk) < new Date(Date.now() + 30*864e5) ? T.green : T.muted, fontWeight: 600 }}>{new Date(p.restock_date_uk).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' })}</span> : <span style={{ color: p.qty_uk === 0 ? T.red : T.border }}>—</span>}
+                        {p.restock_date_uk ? <span style={{ color: new Date(p.restock_date_uk) < new Date(Date.now() + 30*864e5) ? T.green : T.muted, fontWeight: 600 }}>{new Date(p.restock_date_uk).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' })}</span> : <span style={{ color: T.border }}>—</span>}
                       </Td>
                       <Td style={{ textAlign: 'right', color: '#8b5cf6', fontWeight: p.incoming_us > 0 ? 700 : 400 }}>{p.incoming_us > 0 ? `+${p.incoming_us}` : '—'}</Td>
                       <Td style={{ textAlign: 'right', fontSize: 12 }}>
-                        {p.restock_date_us ? <span style={{ color: new Date(p.restock_date_us) < new Date(Date.now() + 30*864e5) ? T.green : T.muted, fontWeight: 600 }}>{new Date(p.restock_date_us).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' })}</span> : <span style={{ color: p.qty_us === 0 ? T.red : T.border }}>—</span>}
+                        {p.restock_date_us ? <span style={{ color: new Date(p.restock_date_us) < new Date(Date.now() + 30*864e5) ? T.green : T.muted, fontWeight: 600 }}>{new Date(p.restock_date_us).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' })}</span> : <span style={{ color: T.border }}>—</span>}
                       </Td>
                       <CoverCell weeks={coverRow} />
                       <CoverCell weeks={coverUs} />
                     </tr>
                   )
-                  })
-                })()}
+                })}
               </tbody>
             </table>
           </div>
-          {total > 0 && !coverSort && abcFilter === 'All' && (
+          {filteredItems.length > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderTop: `1px solid ${T.border}` }}>
               <span style={{ fontSize: 12, color: T.muted }}>
-                Showing {(page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, total).toLocaleString()} of <strong style={{ color: T.text }}>{total.toLocaleString()}</strong> variants
+                Showing {(page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, filteredItems.length).toLocaleString()} of <strong style={{ color: T.text }}>{filteredItems.length.toLocaleString()}</strong> variants
               </span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button onClick={() => setPage(0)} disabled={page === 0} style={{ background: T.subtle, border: 'none', color: page === 0 ? T.border : T.muted, borderRadius: 4, padding: '5px 10px', cursor: page === 0 ? 'default' : 'pointer', fontSize: 13 }}>«</button>
