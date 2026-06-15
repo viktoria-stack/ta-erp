@@ -9,18 +9,16 @@ async function loadDashboard() {
   const [
     { data: pos },
     { data: shipments },
-    { data: suppliers },
     { data: invStats },
     { data: invoices },
   ] = await Promise.all([
     supabase.from('purchase_orders').select('id, supplier_name, total_cost_value, currency, ex_factory_date, po_splits_confirmed, sheet_status, created_at'),
     supabase.from('shipments').select('id, po_id, dc, status, units, eta, freight_forwarder, shipment_ref, tracking_number'),
-    supabase.from('suppliers').select('id, name, code, status'),
     supabase.from('inventory').select('qty_uk, qty_us').limit(5000),
     supabase.from('invoices').select('id, invoice_number, supplier_name, currency, deposit_amount, deposit_due_date, deposit_paid_date, balance_amount, balance_due_date, balance_paid_date'),
   ])
 
-  return { pos: pos || [], shipments: shipments || [], suppliers: suppliers || [], invStats: invStats || [], invoices: invoices || [] }
+  return { pos: pos || [], shipments: shipments || [], invStats: invStats || [], invoices: invoices || [] }
 }
 
 const sheetStatusToPoStatus = (ss) => {
@@ -216,7 +214,7 @@ export default function DashboardPage() {
   if (loading) return <Shell title="Dashboard"><Loading /></Shell>
   if (!data) return null
 
-  const { pos, shipments, suppliers, invStats, invoices } = data
+  const { pos, shipments, invStats, invoices } = data
 
   // ── Payment alerts
   const todayStr = new Date().toISOString().slice(0, 10)
@@ -276,25 +274,6 @@ export default function DashboardPage() {
   const outOfStock = invStats.filter(r => !r.qty_uk && !r.qty_us).length
   const lowStock = invStats.filter(r => (r.qty_uk > 0 && r.qty_uk < 10) || (r.qty_us > 0 && r.qty_us < 10)).length
 
-  // ── Supplier stats
-  const activeSuppliers = suppliers.filter(s => s.status === 'Active')
-
-  // ── Shipments per supplier (from PO data) + on-time %
-  const supplierShipments = {}
-  for (const sh of shipments) {
-    const po = pos.find(p => p.id === sh.po_id)
-    const name = po?.supplier_name || 'Unknown'
-    if (!supplierShipments[name]) supplierShipments[name] = { name, count: 0, inTransit: 0, inProduction: 0, onTimeCount: 0, deliveredCount: 0 }
-    supplierShipments[name].count++
-    if (sh.status?.includes('transit')) supplierShipments[name].inTransit++
-    if (sh.status === 'In production') supplierShipments[name].inProduction++
-    const actual = sh.booked_in_date || sh.delivery_date
-    if (sh.eta && actual) {
-      supplierShipments[name].deliveredCount++
-      if (actual <= sh.eta) supplierShipments[name].onTimeCount++
-    }
-  }
-  const topSuppliers = Object.values(supplierShipments).sort((a, b) => b.count - a.count)
 
   return (
     <Shell title="Dashboard">
@@ -471,70 +450,6 @@ export default function DashboardPage() {
               <div style={{ fontSize: 10, color: T.muted, marginTop: 4, textAlign: 'right' }}>{shipments.length} total shipments</div>
             </div>
           </div>
-        </Section>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-
-        {/* Inventory snapshot */}
-        <Section title="📦 Inventory Snapshot" link="/inventory" router={router}>
-          <div style={{ padding: '16px 18px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-              {[
-                { label: '🇬🇧 ROW Total Units', value: totalUK.toLocaleString(), color: '#3b82f6' },
-                { label: '🇺🇸 US Total Units', value: totalUS.toLocaleString(), color: '#8b5cf6' },
-                { label: '⚠ Low Stock SKUs', value: lowStock.toLocaleString(), color: lowStock > 0 ? T.yellow : T.green },
-                { label: '✕ Out of Stock', value: outOfStock.toLocaleString(), color: outOfStock > 0 ? T.red : T.green },
-              ].map(s => (
-                <div key={s.label} style={{ background: T.surface, borderRadius: 6, padding: '10px 12px', border: `1px solid ${T.border}` }}>
-                  <div style={{ fontSize: 10, color: T.muted, marginBottom: 3 }}>{s.label}</div>
-                  <div style={{ fontSize: 20, fontFamily: 'Barlow Condensed', fontWeight: 800, color: s.color }}>{s.value}</div>
-                </div>
-              ))}
-            </div>
-            {/* UK vs US bar */}
-            <div style={{ fontSize: 11, color: T.muted, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
-              <span><span style={{ color: '#3b82f6' }}>■</span> ROW {totalUK > 0 ? Math.round(totalUK / (totalUK + totalUS) * 100) : 0}%</span>
-              <span><span style={{ color: '#8b5cf6' }}>■</span> US {totalUS > 0 ? Math.round(totalUS / (totalUK + totalUS) * 100) : 0}%</span>
-            </div>
-            <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{ flex: totalUK, background: '#3b82f6' }} />
-              <div style={{ flex: totalUS, background: '#8b5cf6' }} />
-            </div>
-          </div>
-        </Section>
-
-        {/* Suppliers */}
-        <Section title={`🏭 Suppliers (${activeSuppliers.length} active)`} link="/suppliers" router={router}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: T.surface }}>
-                <Th>Code</Th><Th>Supplier</Th><Th style={{ textAlign: 'right' }}>Shipments</Th><Th style={{ textAlign: 'right' }}>In Transit</Th><Th style={{ textAlign: 'right' }}>On-Time</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {topSuppliers.map(s => (
-                <tr key={s.name} className="row-hover">
-                  <Td>
-                    <span style={{ background: T.accent + '20', color: T.accent, borderRadius: 3, padding: '1px 8px', fontSize: 11, fontWeight: 800, fontFamily: 'monospace' }}>
-                      {suppliers.find(sup => sup.name === s.name)?.code || s.name.slice(0, 3).toUpperCase()}
-                    </span>
-                  </Td>
-                  <Td style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</Td>
-                  <Td style={{ textAlign: 'right', fontWeight: 700 }}>{s.count}</Td>
-                  <Td style={{ textAlign: 'right', color: s.inTransit > 0 ? T.blue : T.muted, fontWeight: s.inTransit > 0 ? 700 : 400 }}>{s.inTransit}</Td>
-                  <Td style={{ textAlign: 'right' }}>
-                    {s.deliveredCount > 0
-                      ? (() => { const pct = Math.round(s.onTimeCount / s.deliveredCount * 100); return <span style={{ fontWeight: 700, color: pct >= 80 ? T.green : pct >= 60 ? T.yellow : T.red }}>{pct}%</span> })()
-                      : <span style={{ color: T.border, fontSize: 12 }}>—</span>}
-                  </Td>
-                </tr>
-              ))}
-              {topSuppliers.length === 0 && (
-                <tr><td colSpan={4} style={{ padding: '20px 18px', color: T.muted, fontSize: 13 }}>No supplier data</td></tr>
-              )}
-            </tbody>
-          </table>
         </Section>
       </div>
 
