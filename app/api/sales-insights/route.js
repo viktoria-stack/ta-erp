@@ -156,11 +156,12 @@ export async function GET(req) {
     }
     const devices = Object.values(deviceMap).sort((a, b) => b.sessions - a.sessions)
 
-    // New vs Returning
+    // New vs Returning — normalize all non-'new' values to 'returning'
     const customerMap = {}
     for (let i = 0; i < n; i++) {
       for (const row of (results[i * 4 + 2].rows || [])) {
-        const key = row.dimensionValues[0].value
+        const raw = row.dimensionValues[0].value.toLowerCase().trim()
+        const key = raw === 'new' ? 'new' : 'returning'
         const [sess, rev, txns] = row.metricValues.map(m => parseFloat(m.value) || 0)
         if (!customerMap[key]) customerMap[key] = { type: key, sessions: 0, revenue: 0, transactions: 0 }
         customerMap[key].sessions     += sess
