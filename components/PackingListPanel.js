@@ -13,20 +13,59 @@ function parsePackingList(buffer) {
   if (!rows.length) return { items: [], error: 'Empty file' }
 
   const matches = (h, patterns) => patterns.some(p => h === p || h.includes(p))
-  const SKU_P  = ['variant sku', 'sku', 'item code', 'style no', 'style number', 'article no', 'article', 'product code', 'reference', 'barcode']
-  const QTY_P  = ['variant inventory qty', 'inventory qty', 'total qty', 'total units', 'carton qty', 'qty', 'quantity', 'units']
+  const SKU_P  = ['variant sku', 'sku', 'item code', 'style no', 'style number', 'article no', 'article', 'product code', 'reference']
+  const QTY_P  = ['variant inventory qty', 'inventory qty', 'total qty', 'total units', 'carton qty', 'units', 'qty', 'quantity']
   const NAME_P = ['title', 'description', 'product name', 'style name', 'name']
 
-  let headerRow = -1, skuCol = -1, qtyCol = -1, nameCol = -1
+  // ── Strategy 1: scan entire file for "Packing List Summary" section ──
+  // UK format: main table has per-size columns, but summary at bottom has SKU + Units
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    if (!r) continue
+    if (!r.some(c => norm(c).includes('packing list summary'))) continue
 
-  for (let i = 0; i < Math.min(20, rows.length); i++) {
+    // Found summary title row — find the header row below it (has SKU column)
+    let skuCol = -1, qtyCol = -1, nameCol = -1, headerRow = -1
+    for (let j = i + 1; j < Math.min(i + 6, rows.length); j++) {
+      const hr = rows[j]
+      if (!hr) continue
+      const nh = hr.map(norm)
+      const si = nh.findIndex(h => matches(h, SKU_P))
+      if (si >= 0) {
+        headerRow = j; skuCol = si
+        qtyCol  = nh.findIndex(h => matches(h, QTY_P))
+        nameCol = nh.findIndex(h => matches(h, NAME_P))
+        break
+      }
+    }
+    if (headerRow < 0 || skuCol < 0) continue
+
+    const items = []
+    for (let j = headerRow + 1; j < rows.length; j++) {
+      const r2 = rows[j]
+      if (!r2) continue
+      const sku = String(r2[skuCol] || '').trim()
+      if (!sku || norm(sku) === 'sku' || norm(sku) === 'total') continue
+      const units = qtyCol >= 0 ? (parseInt(r2[qtyCol]) || 0) : 0
+      if (units === 0) continue
+      const product_name = nameCol >= 0 ? String(r2[nameCol] || '').trim() : ''
+      items.push({ sku, product_name, units_actual: units })
+    }
+    if (items.length > 0) return { items, error: null }
+  }
+
+  // ── Strategy 2: flexible header detection anywhere in first 30 rows ──
+  // US/Shopify export format: flat table with single Units/Qty column
+  let headerRow = -1, skuCol = -1, qtyCol = -1, nameCol = -1
+  for (let i = 0; i < Math.min(30, rows.length); i++) {
     const r = rows[i]
     if (!r) continue
     const nh = r.map(norm)
     const si = nh.findIndex(h => matches(h, SKU_P))
     if (si >= 0) {
-      headerRow = i; skuCol = si
-      qtyCol  = nh.findIndex(h => matches(h, QTY_P))
+      const qi = nh.findIndex(h => matches(h, QTY_P))
+      if (qi < 0) continue // skip rows without a qty column (e.g. size-split tables)
+      headerRow = i; skuCol = si; qtyCol = qi
       nameCol = nh.findIndex(h => matches(h, NAME_P))
       break
     }
@@ -36,7 +75,7 @@ function parsePackingList(buffer) {
     const preview = rows.slice(0, 6)
       .map(r => (r || []).filter(Boolean).slice(0, 6).join(' | '))
       .filter(Boolean).join('\n')
-    return { items: [], error: `Nenašiel sa stĺpec SKU. Prvé riadky súboru:\n${preview || '(prázdne)'}` }
+    return { items: [], error: `Nenašiel sa SKU stĺpec ani "Packing List Summary" sekcia.\nPrvé riadky súboru:\n${preview || '(prázdne)'}` }
   }
 
   const items = []
@@ -45,15 +84,15 @@ function parsePackingList(buffer) {
     if (!r) continue
     const sku = String(r[skuCol] || '').trim()
     if (!sku || norm(sku) === 'sku' || norm(sku) === 'total') continue
-    const units = qtyCol >= 0 ? (parseInt(r[qtyCol]) || 0) : 0
+    const units = parseInt(r[qtyCol]) || 0
     if (units === 0) continue
     const product_name = nameCol >= 0 ? String(r[nameCol] || '').trim() : ''
     items.push({ sku, product_name, units_actual: units })
   }
 
   if (!items.length) {
-    const headers = rows[headerRow].filter(Boolean).join(', ')
-    return { items: [], error: `Hlavička nájdená (riadok ${headerRow + 1}): ${headers}\nAle žiadne položky s qty > 0. SKU stĺpec: ${skuCol + 1}, Qty stĺpec: ${qtyCol >= 0 ? qtyCol + 1 : 'nenájdený'}.` }
+    const headers = (rows[headerRow] || []).filter(Boolean).join(', ')
+    return { items: [], error: `Hlavička nájdená (riadok ${headerRow + 1}): ${headers}\nŽiadne položky s qty > 0.` }
   }
   return { items, error: null }
 }
