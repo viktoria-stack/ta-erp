@@ -6,6 +6,20 @@ import { T, Th, Td, Loading } from '@/components/ui'
 const fmtCcy = n => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(n || 0)
 const fmtNum = n => Number(n || 0).toLocaleString('en-GB')
 
+const CHANNEL_COLORS = {
+  'Organic Search':  '#22c55e',
+  'Direct':          '#3b82f6',
+  'Paid Search':     '#f59e0b',
+  'Email':           '#a78bfa',
+  'Organic Social':  '#ec4899',
+  'Referral':        '#06b6d4',
+  'Paid Social':     '#f97316',
+  'Affiliates':      '#84cc16',
+  'Display':         '#8b5cf6',
+  'Unassigned':      '#6b7280',
+}
+const channelColor = ch => CHANNEL_COLORS[ch] || '#6b7280'
+
 const RANGES = [
   { label: '7D',  days: 7 },
   { label: '30D', days: 30 },
@@ -45,6 +59,8 @@ export default function SalesPage() {
   const [search, setSearch]       = useState('')
   const [sortCol, setSortCol]     = useState('revenue')
   const [sortAsc, setSortAsc]     = useState(false)
+  const [geo, setGeo]             = useState({ countries: [], channels: [] })
+  const [geoLoading, setGeoLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -61,6 +77,18 @@ export default function SalesPage() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
+  }, [days, startDate, endDate, isCustom, store])
+
+  useEffect(() => {
+    setGeoLoading(true)
+    const base = isCustom
+      ? `/api/sales-geo?startDate=${startDate}&endDate=${endDate}`
+      : `/api/sales-geo?days=${days}`
+    fetch(`${base}&store=${store}`)
+      .then(r => r.json())
+      .then(data => { if (!data.error) setGeo(data) })
+      .catch(() => {})
+      .finally(() => setGeoLoading(false))
   }, [days, startDate, endDate, isCustom, store])
 
   const filtered = useMemo(() => {
@@ -240,6 +268,67 @@ export default function SalesPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Countries + Channels */}
+      {!geoLoading && (geo.countries.length > 0 || geo.channels.length > 0) && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 20 }}>
+
+          {/* Top Countries */}
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+              Top Countries
+            </div>
+            {(() => {
+              const totalRev = geo.countries.reduce((s, c) => s + c.revenue, 0) || 1
+              return geo.countries.map((c, i) => (
+                <div key={c.country} style={{ padding: '9px 18px', borderTop: i > 0 ? `1px solid ${T.border}` : 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 11, color: T.border, width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.country}</div>
+                    <div style={{ marginTop: 3, height: 3, borderRadius: 2, background: T.border, overflow: 'hidden' }}>
+                      <div style={{ width: `${(c.revenue / totalRev) * 100}%`, height: '100%', background: T.accent, borderRadius: 2 }} />
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.green, fontVariantNumeric: 'tabular-nums' }}>{fmtCcy(c.revenue)}</div>
+                    <div style={{ fontSize: 11, color: T.muted }}>{fmtNum(c.transactions)} orders</div>
+                  </div>
+                </div>
+              ))
+            })()}
+          </div>
+
+          {/* Channels */}
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+              Traffic Channels
+            </div>
+            {(() => {
+              const totalSess = geo.channels.reduce((s, c) => s + c.sessions, 0) || 1
+              return geo.channels.map((c, i) => {
+                const pct = ((c.sessions / totalSess) * 100).toFixed(0)
+                const color = channelColor(c.channel)
+                return (
+                  <div key={c.channel} style={{ padding: '9px 18px', borderTop: i > 0 ? `1px solid ${T.border}` : 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.channel}</div>
+                      <div style={{ marginTop: 3, height: 3, borderRadius: 2, background: T.border, overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2, opacity: 0.7 }} />
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>{fmtNum(c.sessions)} <span style={{ fontSize: 11, color: T.muted, fontWeight: 400 }}>sess.</span></div>
+                      <div style={{ fontSize: 11, color: T.muted }}>{pct}% · {fmtCcy(c.revenue)}</div>
+                    </div>
+                  </div>
+                )
+              })
+            })()}
+          </div>
+
         </div>
       )}
     </Shell>
