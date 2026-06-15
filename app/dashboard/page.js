@@ -150,6 +150,7 @@ export default function DashboardPage() {
   const [countdown, setCountdown] = useState(30)
   const [sheetTotals, setSheetTotals] = useState(null)
   const [topSales, setTopSales] = useState({ row: [], us: [] })
+  const [salesLoaded, setSalesLoaded] = useState(false)
   const [trend, setTrend] = useState(null)
   const [salesError, setSalesError] = useState('')
   const router = useRouter()
@@ -172,12 +173,14 @@ export default function DashboardPage() {
       fetch('/api/sales-data?days=7&store=row').then(r => r.json()),
       fetch('/api/sales-data?days=7&store=us').then(r => r.json()),
     ]).then(([rowData, usData]) => {
-      if (rowData.error) { setSalesError(rowData.error); return }
-      setTopSales({
-        row: (rowData.rows || []).slice(0, 5),
-        us:  (usData.rows  || []).slice(0, 5),
-      })
-    }).catch(e => setSalesError(e.message))
+      if (rowData.error) { setSalesError(rowData.error) }
+      else {
+        setTopSales({
+          row: (rowData.rows || []).slice(0, 7),
+          us:  (usData.rows  || []).slice(0, 7),
+        })
+      }
+    }).catch(e => setSalesError(e.message)).finally(() => setSalesLoaded(true))
   }, [])
 
   useEffect(() => {
@@ -260,7 +263,7 @@ export default function DashboardPage() {
       return eta >= now && eta <= in60 && !s.status?.includes('Booked') && !s.status?.includes('Delivered')
     })
     .sort((a, b) => new Date(a.eta) - new Date(b.eta))
-    .slice(0, 8)
+    .slice(0, 15)
 
   // ── Recently booked in
   const recentlyBooked = shipments
@@ -291,7 +294,7 @@ export default function DashboardPage() {
       if (actual <= sh.eta) supplierShipments[name].onTimeCount++
     }
   }
-  const topSuppliers = Object.values(supplierShipments).sort((a, b) => b.count - a.count).slice(0, 5)
+  const topSuppliers = Object.values(supplierShipments).sort((a, b) => b.count - a.count)
 
   return (
     <Shell title="Dashboard">
@@ -309,8 +312,8 @@ export default function DashboardPage() {
 
       {/* ── Sales API error ── */}
       {salesError && (
-        <div style={{ background: '#ef444410', border: '1px solid #ef444430', borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: 12, color: '#ef4444' }}>
-          ⚠ GA4 API error: {salesError}
+        <div style={{ fontSize: 11, color: T.muted, marginBottom: 8, paddingLeft: 2 }}>
+          Sales data unavailable · <span style={{ color: T.border }}>{salesError}</span>
         </div>
       )}
 
@@ -549,7 +552,9 @@ export default function DashboardPage() {
               <button onClick={() => router.push('/sales')} style={{ background: 'none', border: 'none', color: T.accent, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>View all →</button>
             </div>
             {rows.length === 0 ? (
-              <div style={{ padding: '20px 18px', color: T.muted, fontSize: 13 }}>Loading…</div>
+              <div style={{ padding: '20px 18px', color: T.muted, fontSize: 13 }}>
+                {salesLoaded ? 'No sales data available' : 'Loading…'}
+              </div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
