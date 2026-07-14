@@ -6,6 +6,22 @@ import { supabase } from '@/lib/supabase'
 
 const norm = s => String(s || '').toLowerCase().trim()
 
+const ALL_SIZES = new Set(['XS','S','M','L','XL','XXL','XXXL','2XL','3XL','4XL','OS','ONE SIZE','ONE-SIZE','FREE SIZE'])
+// Return variant SKU (base-SIZE) but avoid double-suffix if SKU already ends with a size
+const variantSku = (sku, size) => {
+  if (!size) return sku
+  const up = sku.toUpperCase()
+  const sz = size.toUpperCase()
+  if (up.endsWith('-' + sz)) return sku                          // already "ESR0017-S"
+  const lastPart = up.split('-').pop()
+  if (ALL_SIZES.has(lastPart)) {
+    // SKU ends with a DIFFERENT size — replace it (e.g. "DSG00302-L" + "S" → "DSG00302-S")
+    const base = sku.slice(0, sku.lastIndexOf('-'))
+    return `${base}-${size}`
+  }
+  return `${sku}-${size}`
+}
+
 function parsePackingList(buffer) {
   const wb = XLSX.read(buffer, { type: 'array' })
   const ws = wb.Sheets[wb.SheetNames[0]]
@@ -13,10 +29,12 @@ function parsePackingList(buffer) {
   if (!rows.length) return { items: [], error: 'Empty file' }
 
   const matches = (h, patterns) => patterns.some(p => h === p || h.includes(p))
-  const SKU_P  = ['variant sku', 'sku', 'item code', 'style no', 'style number', 'article no', 'article', 'product code', 'reference']
-  const QTY_P  = ['variant inventory qty', 'inventory qty', 'total qty', 'total units', 'carton qty', 'units', 'qty', 'quantity']
-  const NAME_P = ['title', 'description', 'product name', 'style name', 'name']
-  const SIZES  = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', '2xl', 'xxxl', '3xl', '4xl', 'os', 'one size', 'one-size', 'free size', 'universal'])
+  const SKU_P     = ['variant sku', 'sku', 'item code', 'style no', 'style number', 'article no', 'article', 'product code', 'reference']
+  const QTY_P     = ['variant inventory qty', 'inventory qty', 'total qty', 'total units', 'carton qty', 'units', 'qty', 'quantity']
+  const NAME_P    = ['title', 'description', 'product name', 'style name', 'name']
+  const BARCODE_P = ['carton barcode', 'case barcode', 'barcode', 'ean', 'gtin', 'upc']
+  const CARTON_P  = ['carton #', 'carton no', 'carton number', 'box no', 'box #', 'box number', 'carton']
+  const SIZES     = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', '2xl', 'xxxl', '3xl', '4xl', 'os', 'one size', 'one-size', 'free size', 'universal'])
 
   // ── Strategy 0: UK size-split format ──
   // Main table: header row has SKU, sub-header row has size names (S, M, L, XL, 2XL...)
@@ -38,11 +56,14 @@ function parsePackingList(buffer) {
     const sizeCols = sizeNh.reduce((acc, h, idx) => { if (SIZES.has(h)) acc.push(idx); return acc }, [])
     if (sizeCols.length < 2) continue // not a size-split table
 
-    // Found UK-style table — read data rows, sum qty across size columns per SKU
-    const nameCol = nh.findIndex(h => matches(h, NAME_P))
-    const skuMap  = {}
-    // find where data actually starts (skip sub-header rows)
-    const dataStart = rows.indexOf(sizeRow) + 1
+    // Found UK-style table — read data rows, keep per SKU+size rows
+    const nameCol    = nh.findIndex(h => matches(h, NAME_P))
+    const barcodeCol = nh.findIndex(h => matches(h, BARCODE_P))
+    const cartonCol  = nh.findIndex(h => matches(h, CARTON_P))
+    const skuMap     = {}
+    const cartonRows = []
+    const cartonBarcodeMap = {}  // carton# → barcode (for propagation)
+    const dataStart  = rows.indexOf(sizeRow) + 1
     for (let j = dataStart; j < rows.length; j++) {
       const d = rows[j]
       if (!d) continue
@@ -50,14 +71,29 @@ function parsePackingList(buffer) {
       if (d.some(c => norm(c) === 'total')) continue
       const sku = String(d[si] || '').trim()
       if (!sku || norm(sku) === 'sku') continue
-      const qty = sizeCols.reduce((sum, ci) => sum + (parseInt(d[ci]) || 0), 0)
-      if (qty === 0) continue
-      const pn = nameCol >= 0 ? String(d[nameCol] || '').trim() : ''
-      if (skuMap[sku]) { skuMap[sku].units_actual += qty }
-      else { skuMap[sku] = { sku, product_name: pn, units_actual: qty } }
+      const pn       = nameCol    >= 0 ? String(d[nameCol]    || '').trim() : ''
+      const cartonNo = cartonCol  >= 0 ? String(d[cartonCol]  || '').trim() : ''
+      const barcode  = barcodeCol >= 0 ? String(d[barcodeCol] || '').trim() : ''
+      if (barcode && cartonNo) cartonBarcodeMap[cartonNo] = barcode
+      // one row per size column that has qty > 0
+      for (const ci of sizeCols) {
+        const qty = parseInt(d[ci]) || 0
+        if (qty === 0) continue
+        const size = sizeNh[ci].toUpperCase()
+        const key  = `${sku}||${size}`
+        if (skuMap[key]) { skuMap[key].units_actual += qty }
+        else { skuMap[key] = { sku, size, product_name: pn, units_actual: qty } }
+        cartonRows.push({ sku, size, product_name: pn, units_actual: qty, carton_no: cartonNo, barcode })
+      }
+    }
+    // Carry-forward: if a row has no barcode, inherit from the row above (suppliers often put barcode only on first row of each carton)
+    let lastBarcode = ''
+    for (const cr of cartonRows) {
+      if (cr.barcode) { lastBarcode = cr.barcode }
+      else if (lastBarcode) { cr.barcode = lastBarcode }
     }
     const items = Object.values(skuMap)
-    if (items.length > 0) return { items, error: null }
+    if (items.length > 0) return { items, cartonRows, error: null }
   }
 
   // ── Strategy 1: scan entire file for "Packing List Summary" section ──
@@ -139,13 +175,26 @@ function parsePackingList(buffer) {
   return { items, error: null }
 }
 
-function generateASN(shipment, items) {
+function generateASN(shipment, items, cartonRows) {
   const eta = shipment.eta ? shipment.eta.slice(0, 10).split('-').reverse().join('/') : ''
   const rows = [
     ['PO Number', 'Business Type', 'Shipment Number', 'Facility', 'Carrier Number', 'Seal Number', 'Load Number', 'Shipping Method', 'Shipped At', 'Arrival At', 'Case Barcode', 'Sku Code', '', 'Quantity', 'Country of Origin']
   ]
-  items.forEach(item => {
-    rows.push([shipment.shipment_ref, '', shipment.shipment_ref, 'FBF06', '', '', '', '', '', eta, '', item.sku, '', item.units_actual, ''])
+  // Use per-carton rows (with barcodes) if available, else fall back to aggregated items
+  const source = (cartonRows && cartonRows.length > 0) ? cartonRows : items
+  // Build carton_no → barcode map first (handles out-of-order rows from DB)
+  const cartonMap = {}
+  for (const item of source) {
+    const cn = item.carton_no ? String(item.carton_no).trim() : ''
+    if (cn && item.barcode) cartonMap[cn] = item.barcode
+  }
+  // Apply carry-forward: carton map lookup first, then inherit from row above
+  let lastBarcode = ''
+  source.forEach(item => {
+    const cn = item.carton_no ? String(item.carton_no).trim() : ''
+    const barcode = item.barcode || (cn ? cartonMap[cn] : '') || lastBarcode
+    if (barcode) lastBarcode = barcode
+    rows.push([shipment.shipment_ref, '', shipment.shipment_ref, 'FBF09', '', '', '', '', '', eta, barcode, variantSku(item.sku, item.size), '', item.units_actual, ''])
   })
   const csv = rows.map(r => r.join(',')).join('\r\n')
   const blob = new Blob([csv], { type: 'text/csv' })
@@ -156,13 +205,14 @@ function generateASN(shipment, items) {
 }
 
 export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
-  const [items, setItems]         = useState(null)
+  const [items, setItems]           = useState(null)
+  const [cartonItems, setCartonItems] = useState([])
   const [parseError, setParseError] = useState(null)
-  const [saved, setSaved]         = useState(shipment.packing_list_uploaded || false)
+  const [saved, setSaved]           = useState(shipment.packing_list_uploaded || false)
   const [savedItems, setSavedItems] = useState([])
-  const [saving, setSaving]       = useState(false)
-  const [loading, setLoading]     = useState(false)
-  const [syncMsg, setSyncMsg]     = useState(null)
+  const [saving, setSaving]         = useState(false)
+  const [loading, setLoading]       = useState(false)
+  const [syncMsg, setSyncMsg]       = useState(null)
   const fileRef = useRef()
   const isUS = shipment.dc === 'US'
 
@@ -188,12 +238,34 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
     e.target.value = ''
     setParseError(null)
     const buffer = await file.arrayBuffer()
-    const { items: parsed, error } = parsePackingList(new Uint8Array(buffer))
+    const { items: parsed, cartonRows, error } = parsePackingList(new Uint8Array(buffer))
     if (error) { setParseError(error); return }
+    setCartonItems(cartonRows || [])
 
     const col = isUS ? 'us' : 'uk'
     const withPlanned = parsed.map(item => {
-      const planned = poLines.find(l => (l.sku || '').toUpperCase() === item.sku.toUpperCase())
+      const pSku  = item.sku.toUpperCase()
+      const pSize = (item.size || '').toUpperCase()
+      const pName = (item.product_name || '').toLowerCase().trim()
+      const nameMatch = (l) => {
+        const ln = (l.product_name || '').toLowerCase().trim()
+        return ln && pName && (ln === pName || ln.includes(pName) || pName.includes(ln))
+      }
+      // 1. variant SKU or base SKU + size
+      const bySkuSize = pSize
+        ? poLines.find(l => {
+            const lSku = (l.sku || '').toUpperCase()
+            return lSku === `${pSku}-${pSize}` ||
+                   (lSku === pSku && (l.size || '').toUpperCase() === pSize)
+          })
+        : null
+      // 2. product name + size
+      const byNameSize = pSize ? poLines.find(l => nameMatch(l) && (l.size || '').toUpperCase() === pSize) : null
+      // 3. base SKU only
+      const bySku = poLines.find(l => (l.sku || '').toUpperCase() === pSku)
+      // 4. product name only
+      const byName = poLines.find(l => nameMatch(l))
+      const planned = bySkuSize || byNameSize || bySku || byName
       const units_planned = planned
         ? (col === 'uk' ? (planned.qty_uk || 0) : (planned.qty_usa || planned.qty_us || 0))
         : 0
@@ -209,14 +281,19 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
     const total = items.reduce((s, i) => s + i.units_actual, 0)
 
     await supabase.from('packing_list_items').delete().eq('shipment_ref', shipment.shipment_ref)
+    // Save carton-level rows (with barcodes) if available, else save aggregated items
+    const rowsToSave = cartonItems.length > 0 ? cartonItems : items
     await supabase.from('packing_list_items').insert(
-      items.map(i => ({
-        shipment_id: shipment.id,
-        shipment_ref: shipment.shipment_ref,
-        sku: i.sku,
-        product_name: i.product_name,
-        units_actual: i.units_actual,
-        units_planned: i.units_planned,
+      rowsToSave.map(i => ({
+        shipment_id:   shipment.id,
+        shipment_ref:  shipment.shipment_ref,
+        sku:           i.sku,
+        size:          i.size || '',
+        product_name:  i.product_name,
+        units_actual:  i.units_actual,
+        units_planned: i.units_planned || 0,
+        barcode:       i.barcode  || '',
+        carton_no:     i.carton_no || '',
       }))
     )
     await supabase.from('shipments').update({
@@ -224,12 +301,17 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
       actual_units: total,
     }).eq('id', shipment.id)
 
-    // Sync incoming qty + ETA → inventory_incoming
+    // Sync incoming qty + ETA → inventory_incoming (per size variant, e.g. ESR0018-S)
     if (shipment.eta) {
       const etaDate = shipment.eta.slice(0, 10)
-      const upsertRows = items.map(i => ({
-        sku: i.sku.toUpperCase(),
-        [`incoming_${col}`]: i.units_actual,
+      const skuMap = {}
+      for (const i of items) {
+        const key = variantSku(i.sku, i.size).toUpperCase()
+        skuMap[key] = (skuMap[key] || 0) + i.units_actual
+      }
+      const upsertRows = Object.entries(skuMap).map(([sku, qty]) => ({
+        sku,
+        [`incoming_${col}`]: qty,
         [`restock_date_${col}`]: etaDate,
         shipment_ref: shipment.shipment_ref,
         updated_at: new Date().toISOString(),
@@ -276,7 +358,7 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
         <div style={{ display: 'flex', gap: 8 }}>
           {saved && savedItems.length > 0 && isUS && (
             <button
-              onClick={() => generateASN(shipment, savedItems)}
+              onClick={() => generateASN(shipment, savedItems, savedItems.some(i => i.barcode) ? savedItems : [])}
               style={{ background: '#8b5cf620', color: '#8b5cf6', border: '1px solid #8b5cf640', borderRadius: 5, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
             >
               ⬇ Download ASN
@@ -312,7 +394,7 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
         <>
           {/* Summary bar */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 10, padding: '8px 12px', background: T.surface, borderRadius: 6, fontSize: 12 }}>
-            <span style={{ color: T.muted }}>{displayItems.length} SKUs</span>
+            <span style={{ color: T.muted }}>{[...new Set(displayItems.map(i => i.sku))].length} SKUs{displayItems.some(i => i.size) ? ` · ${displayItems.length} size rows` : ''}</span>
             <span style={{ color: T.text, fontWeight: 700 }}>Actual: {totalActual.toLocaleString()} units</span>
             {totalPlanned > 0 && <>
               <span style={{ color: T.muted }}>Planned: {totalPlanned.toLocaleString()}</span>
@@ -323,32 +405,41 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
           </div>
 
           {/* Table */}
-          <div style={{ overflowX: 'auto', maxHeight: 320, overflowY: 'auto', border: `1px solid ${T.border}`, borderRadius: 6 }}>
+          <div style={{ overflowX: 'auto', border: `1px solid ${T.border}`, borderRadius: 6 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ position: 'sticky', top: 0 }}>
-                <tr style={{ background: T.surface }}>
-                  <Th>SKU</Th>
-                  <Th>Product</Th>
-                  <Th style={{ textAlign: 'right' }}>Actual</Th>
-                  {totalPlanned > 0 && <Th style={{ textAlign: 'right' }}>Planned</Th>}
-                  {totalPlanned > 0 && <Th style={{ textAlign: 'right' }}>Diff</Th>}
-                </tr>
-              </thead>
-              <tbody>
-                {displayItems.map((item, i) => {
-                  const diff = item.units_actual - (item.units_planned || 0)
-                  const diffColor = diff === 0 ? T.muted : diff > 0 ? '#f59e0b' : '#ef4444'
-                  return (
-                    <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
-                      <Td style={{ fontFamily: 'monospace', fontSize: 11, color: T.accent }}>{item.sku}</Td>
-                      <Td style={{ fontSize: 12, color: T.muted, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_name || '—'}</Td>
-                      <Td style={{ textAlign: 'right', fontWeight: 700 }}>{item.units_actual}</Td>
-                      {totalPlanned > 0 && <Td style={{ textAlign: 'right', color: T.muted }}>{item.units_planned || '—'}</Td>}
-                      {totalPlanned > 0 && <Td style={{ textAlign: 'right', color: diffColor, fontWeight: diff !== 0 ? 700 : 400 }}>{diff !== 0 ? (diff > 0 ? '+' : '') + diff : '—'}</Td>}
-                    </tr>
-                  )
-                })}
-              </tbody>
+              {(() => {
+                const hasSizes = displayItems.some(i => i.size)
+                return (<>
+                <thead style={{ position: 'sticky', top: 0 }}>
+                  <tr style={{ background: T.surface }}>
+                    <Th>SKU</Th>
+                    {hasSizes && <Th style={{ textAlign: 'center' }}>Size</Th>}
+                    <Th>Product</Th>
+                    <Th style={{ textAlign: 'right' }}>Actual</Th>
+                    {totalPlanned > 0 && <Th style={{ textAlign: 'right' }}>Planned</Th>}
+                    {totalPlanned > 0 && <Th style={{ textAlign: 'right' }}>Diff</Th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayItems.map((item, i) => {
+                    const diff = item.units_actual - (item.units_planned || 0)
+                    const diffColor = diff === 0 ? T.muted : diff > 0 ? '#f59e0b' : '#ef4444'
+                    return (
+                      <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                        <Td style={{ fontFamily: 'monospace', fontSize: 11, color: T.accent }}>{variantSku(item.sku, item.size)}</Td>
+                        {hasSizes && <Td style={{ textAlign: 'center' }}>
+                          {item.size ? <span style={{ background: T.surface, borderRadius: 3, padding: '1px 7px', fontSize: 11, fontWeight: 700, color: T.text }}>{item.size}</span> : '—'}
+                        </Td>}
+                        <Td style={{ fontSize: 12, color: T.muted, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_name || '—'}</Td>
+                        <Td style={{ textAlign: 'right', fontWeight: 700 }}>{item.units_actual}</Td>
+                        {totalPlanned > 0 && <Td style={{ textAlign: 'right', color: T.muted }}>{item.units_planned || '—'}</Td>}
+                        {totalPlanned > 0 && <Td style={{ textAlign: 'right', color: diffColor, fontWeight: diff !== 0 ? 700 : 400 }}>{diff !== 0 ? (diff > 0 ? '+' : '') + diff : '—'}</Td>}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                </>)
+              })()}
             </table>
           </div>
 
@@ -359,7 +450,7 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
                 Cancel
               </button>
               {isUS && (
-                <button onClick={() => generateASN(shipment, items)} style={{ background: '#8b5cf620', color: '#8b5cf6', border: '1px solid #8b5cf640', borderRadius: 5, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                <button onClick={() => generateASN(shipment, items, cartonItems)} style={{ background: '#8b5cf620', color: '#8b5cf6', border: '1px solid #8b5cf640', borderRadius: 5, padding: '7px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   ⬇ Download ASN
                 </button>
               )}
