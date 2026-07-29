@@ -349,7 +349,17 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
     if (onSaved) onSaved()
   }
 
-  const displayItems = items || savedItems
+  // Aggregate savedItems by variant SKU — DB stores carton-level rows, display needs one row per SKU+size
+  const aggregatedSaved = Object.values(
+    savedItems.reduce((map, item) => {
+      const key = variantSku(item.sku, item.size)
+      if (map[key]) { map[key] = { ...map[key], units_actual: map[key].units_actual + item.units_actual } }
+      else { map[key] = { ...item } }
+      return map
+    }, {})
+  )
+
+  const displayItems = items || aggregatedSaved
   const totalActual  = displayItems.reduce((s, i) => s + (i.units_actual || 0), 0)
   const totalPlanned = displayItems.reduce((s, i) => s + (i.units_planned || 0), 0)
   const totalDiff    = totalActual - totalPlanned
