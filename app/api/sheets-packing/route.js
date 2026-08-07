@@ -91,28 +91,27 @@ export async function POST(req) {
         { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
       )
     } else {
-      // Delete oldest shipment tabs — first 2 tabs are always protected
-      const SKIP = 2  // master/template tabs that must never be deleted
-      const KEEP = 10 // how many shipment tabs to keep
-      const shipmentSheets = allSheets.slice(SKIP)
-      if (shipmentSheets.length > 0) {
-        const toDelete = shipmentSheets.length >= KEEP
-          ? shipmentSheets.slice(0, shipmentSheets.length - KEEP + 1)
-          : []
-        if (toDelete.length > 0) {
-          const deleteRes = await fetch(
-            `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,
-            {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                requests: toDelete.map(s => ({ deleteSheet: { sheetId: s.properties.sheetId } }))
-              }),
-            }
-          )
-          const deleteData = await deleteRes.json()
-          if (deleteData.error) throw new Error(`Cleanup failed: ${deleteData.error.message}`)
-        }
+      // Delete oldest shipment tabs by sheetId (lower sheetId = created earlier = older)
+      // First 2 tabs by position are protected and excluded from deletion
+      const protectedIds = new Set(allSheets.slice(0, 2).map(s => s.properties.sheetId))
+      const shipmentSheets = allSheets
+        .filter(s => !protectedIds.has(s.properties.sheetId))
+        .sort((a, b) => a.properties.sheetId - b.properties.sheetId) // oldest first
+      const KEEP = 10
+      if (shipmentSheets.length >= KEEP) {
+        const toDelete = shipmentSheets.slice(0, shipmentSheets.length - KEEP + 1)
+        const deleteRes = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              requests: toDelete.map(s => ({ deleteSheet: { sheetId: s.properties.sheetId } }))
+            }),
+          }
+        )
+        const deleteData = await deleteRes.json()
+        if (deleteData.error) throw new Error(`Cleanup failed: ${deleteData.error.message}`)
       }
 
       // Create new tab with small grid to stay under 10M cell limit
