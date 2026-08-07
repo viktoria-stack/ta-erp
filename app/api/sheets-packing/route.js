@@ -81,7 +81,8 @@ export async function POST(req) {
     const meta = await metaRes.json()
     if (meta.error) throw new Error(meta.error.message)
 
-    const existingSheet = meta.sheets?.find(s => s.properties.title === shipment_ref)
+    const allSheets = meta.sheets || []
+    const existingSheet = allSheets.find(s => s.properties.title === shipment_ref)
 
     if (existingSheet) {
       // Clear existing tab
@@ -90,6 +91,24 @@ export async function POST(req) {
         { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
       )
     } else {
+      // Delete oldest tabs if over limit (keep first sheet + 14 most recent shipment tabs)
+      const KEEP = 15
+      const firstSheetId = allSheets[0]?.properties?.sheetId
+      const shipmentSheets = allSheets.filter(s => s.properties.sheetId !== firstSheetId)
+      if (shipmentSheets.length >= KEEP) {
+        const toDelete = shipmentSheets.slice(0, shipmentSheets.length - KEEP + 1)
+        await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              requests: toDelete.map(s => ({ deleteSheet: { sheetId: s.properties.sheetId } }))
+            }),
+          }
+        )
+      }
+
       // Create new tab
       const addRes = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,
