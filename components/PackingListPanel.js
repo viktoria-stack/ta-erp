@@ -324,23 +324,25 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
       setSyncMsg('⚠ Shipment nemá ETA — inventory restock date nebol aktualizovaný')
     }
 
-    // Sync packing list → Google Sheets (new tab per shipment)
-    const uniqueCartons = new Set(cartonItems.map(i => i.carton_no).filter(Boolean)).size
-    const sheetsRes = await fetch('/api/sheets-packing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        shipment_ref: shipment.shipment_ref,
-        items,
-        carton_count: uniqueCartons || null,
-      }),
-    })
-    const sheetsData = await sheetsRes.json()
-    setSyncMsg(prev =>
-      sheetsData.error
-        ? `${prev || ''} | ⚠ Google Sheets: ${sheetsData.error}`
-        : `${prev || ''} | ✓ Google Sheets tab "${shipment.shipment_ref}" vytvorený`
-    )
+    // Sync packing list → Google Sheets (iForce, UK only)
+    if (!isUS) {
+      const uniqueCartons = new Set(cartonItems.map(i => i.carton_no).filter(Boolean)).size
+      const sheetsRes = await fetch('/api/sheets-packing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shipment_ref: shipment.shipment_ref,
+          items,
+          carton_count: uniqueCartons || null,
+        }),
+      })
+      const sheetsData = await sheetsRes.json()
+      setSyncMsg(prev =>
+        sheetsData.error
+          ? `${prev || ''} | ⚠ Google Sheets: ${sheetsData.error}`
+          : `${prev || ''} | ✓ Google Sheets tab "${shipment.shipment_ref}" vytvorený`
+      )
+    }
 
     setSaving(false)
     setSaved(true)
