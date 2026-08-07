@@ -213,6 +213,7 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
   const [saving, setSaving]         = useState(false)
   const [loading, setLoading]       = useState(false)
   const [syncMsg, setSyncMsg]       = useState(null)
+  const [iforcing, setIforcing]     = useState(false)
   const fileRef = useRef()
   const isUS = shipment.dc === 'US'
 
@@ -324,31 +325,35 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
       setSyncMsg('⚠ Shipment nemá ETA — inventory restock date nebol aktualizovaný')
     }
 
-    // Sync packing list → Google Sheets (iForce, UK only)
-    if (!isUS) {
-      const uniqueCartons = new Set(cartonItems.map(i => i.carton_no).filter(Boolean)).size
-      const sheetsRes = await fetch('/api/sheets-packing', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          shipment_ref: shipment.shipment_ref,
-          items,
-          carton_count: uniqueCartons || null,
-        }),
-      })
-      const sheetsData = await sheetsRes.json()
-      setSyncMsg(prev =>
-        sheetsData.error
-          ? `${prev || ''} | ⚠ Google Sheets: ${sheetsData.error}`
-          : `${prev || ''} | ✓ Google Sheets tab "${shipment.shipment_ref}" vytvorený`
-      )
-    }
-
     setSaving(false)
     setSaved(true)
     setItems(null)
     loadSaved()
     if (onSaved) onSaved()
+  }
+
+  async function handleAddToIForce() {
+    const source = items || savedItems
+    if (!source?.length) return
+    setIforcing(true)
+    setSyncMsg(null)
+    const uniqueCartons = new Set(source.map(i => i.carton_no).filter(Boolean)).size
+    try {
+      const res = await fetch('/api/sheets-packing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shipment_ref: shipment.shipment_ref,
+          items: source,
+          carton_count: uniqueCartons || null,
+        }),
+      })
+      const data = await res.json()
+      setSyncMsg(data.error ? `⚠ iForce: ${data.error}` : `✓ iForce sheet tab "${shipment.shipment_ref}" vytvorený`)
+    } catch (e) {
+      setSyncMsg(`⚠ iForce: ${e.message}`)
+    }
+    setIforcing(false)
   }
 
   // Aggregate savedItems by variant SKU — DB stores carton-level rows, display needs one row per SKU+size
@@ -392,6 +397,15 @@ export default function PackingListPanel({ shipment, poLines = [], onSaved }) {
               style={{ background: '#8b5cf620', color: '#8b5cf6', border: '1px solid #8b5cf640', borderRadius: 5, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
             >
               ⬇ Download ASN
+            </button>
+          )}
+          {!isUS && (savedItems.length > 0 || items) && (
+            <button
+              onClick={handleAddToIForce}
+              disabled={iforcing}
+              style={{ background: '#f59e0b20', color: '#f59e0b', border: '1px solid #f59e0b40', borderRadius: 5, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: iforcing ? 'not-allowed' : 'pointer', opacity: iforcing ? 0.6 : 1 }}
+            >
+              {iforcing ? 'Adding...' : '📋 Add to iForce'}
             </button>
           )}
           <button
