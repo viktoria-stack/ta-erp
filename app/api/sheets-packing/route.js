@@ -94,7 +94,7 @@ export async function POST(req) {
       // First 2 tabs are always protected. If there are 10+ shipment tabs, delete the oldest one (index 2).
       const shipmentSheets = allSheets.slice(2) // skip first 2 protected tabs
       if (shipmentSheets.length >= 10) {
-        const oldest = shipmentSheets[0] // lowest position = added first = oldest
+        const oldest = shipmentSheets[shipmentSheets.length - 1] // furthest from protected = oldest
         const deleteRes = await fetch(
           `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,
           {
