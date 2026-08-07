@@ -91,23 +91,16 @@ export async function POST(req) {
         { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
       )
     } else {
-      // Delete oldest shipment tabs by sheetId (lower sheetId = created earlier = older)
-      // First 2 tabs by position are protected and excluded from deletion
-      const protectedIds = new Set(allSheets.slice(0, 2).map(s => s.properties.sheetId))
-      const shipmentSheets = allSheets
-        .filter(s => !protectedIds.has(s.properties.sheetId))
-        .sort((a, b) => a.properties.sheetId - b.properties.sheetId) // oldest first
-      const KEEP = 10
-      if (shipmentSheets.length >= KEEP) {
-        const toDelete = shipmentSheets.slice(0, shipmentSheets.length - KEEP + 1)
+      // First 2 tabs are always protected. If there are 10+ shipment tabs, delete the oldest one (index 2).
+      const shipmentSheets = allSheets.slice(2) // skip first 2 protected tabs
+      if (shipmentSheets.length >= 10) {
+        const oldest = shipmentSheets[0] // lowest position = added first = oldest
         const deleteRes = await fetch(
           `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,
           {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              requests: toDelete.map(s => ({ deleteSheet: { sheetId: s.properties.sheetId } }))
-            }),
+            body: JSON.stringify({ requests: [{ deleteSheet: { sheetId: oldest.properties.sheetId } }] }),
           }
         )
         const deleteData = await deleteRes.json()
