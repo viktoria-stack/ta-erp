@@ -91,13 +91,14 @@ export async function POST(req) {
         { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
       )
     } else {
-      // Delete oldest tabs if over limit (keep first sheet + 14 most recent shipment tabs)
-      const KEEP = 15
-      const firstSheetId = allSheets[0]?.properties?.sheetId
-      const shipmentSheets = allSheets.filter(s => s.properties.sheetId !== firstSheetId)
+      // Delete oldest shipment tabs if over limit — first 2 tabs are always protected
+      const SKIP = 2  // master/template tabs that must never be deleted
+      const KEEP = 15 // how many shipment tabs to keep
+      const shipmentSheets = allSheets.slice(SKIP) // skip first 2 important tabs
       if (shipmentSheets.length >= KEEP) {
+        // oldest tabs are at the start of shipmentSheets (lower index = added earlier)
         const toDelete = shipmentSheets.slice(0, shipmentSheets.length - KEEP + 1)
-        await fetch(
+        const deleteRes = await fetch(
           `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,
           {
             method: 'POST',
@@ -107,6 +108,8 @@ export async function POST(req) {
             }),
           }
         )
+        const deleteData = await deleteRes.json()
+        if (deleteData.error) throw new Error(`Cleanup failed: ${deleteData.error.message}`)
       }
 
       // Create new tab
